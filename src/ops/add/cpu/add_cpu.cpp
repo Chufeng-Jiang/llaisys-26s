@@ -19,6 +19,7 @@ namespace llaisys::ops::cpu {
 void add(std::byte *c, const std::byte *a, const std::byte *b, llaisysDataType_t type, size_t numel) {
     switch (type) {
     case LLAISYS_DTYPE_F32:
+        // c no const, because it is the output, a and b are const because they are inputs
         return add_(reinterpret_cast<float *>(c), reinterpret_cast<const float *>(a), reinterpret_cast<const float *>(b), numel);
     case LLAISYS_DTYPE_BF16:
         return add_(reinterpret_cast<llaisys::bf16_t *>(c), reinterpret_cast<const llaisys::bf16_t *>(a),
