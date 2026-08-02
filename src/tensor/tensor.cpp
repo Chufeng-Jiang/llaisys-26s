@@ -168,277 +168,426 @@ void Tensor::debug() const {
     }
 }
 
-/*
-Check shape and strides of the tensor, and tell wether it is contiguous in memory.
-*/
+
 bool Tensor::isContiguous() const {
-    ptrdiff_t expected_stride = 1; // The expected stride for the last dimension is always 1
+	const auto &shape = _meta.shape;
+	const auto &strides = _meta.strides;
 
-    for (size_t i = this->ndim(); i > 0; --i) {
-        const size_t dim = i - 1;
+	// Shape and stride metadata must describe the same number of dimensions.
+	ASSERT(
+		shape.size() == strides.size(),
+		"Shape and strides must have the same number of dimensions"
+	);
 
-        if (this->shape()[dim] == 1) { // Skip dimensions of size 1, as they do not affect contiguity
-            continue;
-        }
+	// Empty tensors have no elements whose physical layout can violate
+	// contiguity, so they are conventionally treated as contiguous.
+	if (this->numel() == 0) {
+		return true;
+	}
 
-        // Check if the actual stride matches the expected stride for this dimension
-        if (this->strides()[dim] != expected_stride) {
-            return false;
-        }
+	ptrdiff_t expected_stride = 1;
 
-        // Update the expected stride for the next dimension (moving backwards)
-        expected_stride *= static_cast<ptrdiff_t>(this->shape()[dim]); // size_t to ptrdiff_t conversion is safe here because shape values are non-negative
-    }
+	// Traverse dimensions from the innermost dimension to the outermost
+	// dimension, following the standard row-major memory layout.
+	for (size_t i = shape.size(); i > 0; --i) {
+		const size_t dim = i - 1;
 
-    return true;
+		// A dimension of size 1 has only index 0, so its stride does not
+		// affect the actual memory addresses accessed by the tensor.
+		if (shape[dim] == 1) {
+			continue;
+		}
+
+		// A dense row-major tensor must use the expected stride for every
+		// non-singleton dimension.
+		if (strides[dim] != expected_stride) {
+			return false;
+		}
+
+		// The next outer dimension skips all elements contained in the
+		// current dimension.
+		expected_stride *=
+			static_cast<ptrdiff_t>(shape[dim]);
+	}
+
+	return true;
 }
 
-/*
-Create a new tensor which changes the order of the dimensions of original tensor. 
-Transpose can be achieved by this function without moving data around.
-*/
+
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 
-    if (order.size() != this->ndim()) {
-        throw std::runtime_error(
-            "Permutation order must contain every dimension");
-    }
+	const size_t ndim = this->ndim();
 
-    // Check for the dimension has been used or not
-    std::vector<bool> seen(this->ndim(), false);
+	// A valid permutation must specify exactly one entry
+	// for every dimension of the tensor.
+	CHECK_ARGUMENT(
+		order.size() == ndim,
+		"Permutation order must contain every dimension"
+	);
 
-    std::vector<size_t> new_shape(this->ndim());
+	std::vector<bool> seen(ndim, false);
+	std::vector<size_t> new_shape(ndim);
+	std::vector<ptrdiff_t> new_strides(ndim);
 
-    // Initialize new strides for the permuted tensor. 
-    //We must ensure that the new strides correspond to the new shape and the original tensor's strides.
-    std::vector<ptrdiff_t> new_strides(this->ndim());
+	for (size_t output_dim = 0; output_dim < ndim; ++output_dim) {
+		// order[output_dim] identifies which original dimension
+		// becomes this output dimension.
+		const size_t input_dim = order[output_dim];
 
-    for (size_t i = 0; i < order.size(); ++i) {
-        const size_t dim = order[i];
+		CHECK_ARGUMENT(
+			input_dim < ndim,
+			"Permutation dimension is out of range"
+		);
 
-        if (dim >= this->ndim()) {
-            throw std::runtime_error(
-                "Permutation dimension is out of range");
-        }
+		// Each original dimension must appear exactly once.
+		CHECK_ARGUMENT(
+			!seen[input_dim],
+			"Permutation dimensions must not be repeated"
+		);
 
-        if (seen[dim]) {
-            throw std::runtime_error(
-                "Permutation dimensions must not be repeated");
-        }
+		seen[input_dim] = true;
 
-        seen[dim] = true;
-        new_shape[i] = this->shape()[dim];
-        new_strides[i] = this->strides()[dim];
-    }
+		// Permute both shape and stride together so that the new
+		// tensor preserves the original mapping to physical memory.
+		new_shape[output_dim] = this->shape()[input_dim];
+		new_strides[output_dim] = this->strides()[input_dim];
+	}
 
-    TensorMeta meta{
-        this->dtype(),
-        std::move(new_shape),
-        std::move(new_strides),
-    };
+	TensorMeta meta{
+		this->dtype(),
+		std::move(new_shape),
+		std::move(new_strides),
+	};
 
-    return std::shared_ptr<Tensor>(
-        new Tensor(std::move(meta), _storage, _offset));
+	return std::shared_ptr<Tensor>(
+		new Tensor(
+			std::move(meta),
+			this->_storage,
+			this->_offset
+		)
+	);
 }
 
-/*
-Create a new tensor which reshapes the original tensor to the given shape by splitting or merging the original dimensions.
-No data transfer is involved. For example change a tensor of shape (2, 3, 5) to (2, 15) by merging the last two dimensions.
-
-This function is not as easy as simply changing the shape of the tensor, although the test will pass.
-It should raise an error if new view is not compatible with the original tensor.
-Think about a tensor of shape (2, 3, 5) and strides (30, 10, 1).
-Can you still reshape it to (2, 15) without data transfer?
-*/
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
+	// view() only changes metadata and does not rearrange data.
+	// Therefore, the original tensor must have a dense memory layout.
+	CHECK_ARGUMENT(
+		this->isContiguous(),
+		"View requires a contiguous tensor"
+	);
 
-    // Check if the new shape has the same number of elements as the original tensor
-    const size_t new_numel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+	// The new shape must describe exactly the same number of elements.
+	const size_t new_numel = std::accumulate(
+		shape.begin(),
+		shape.end(),
+		size_t(1),
+		std::multiplies<size_t>()
+	);
 
-    if (new_numel != this->numel()) {
-        throw std::runtime_error(
-            "View shape must have the same number of elements");
-    }
+	CHECK_ARGUMENT(
+		new_numel == this->numel(),
+		"View shape must have the same number of elements"
+	);
 
-    // Initialize new strides for the view tensor
-    std::vector<ptrdiff_t> new_strides(shape.size());
+	// Generate standard row-major strides for the new shape.
+	std::vector<ptrdiff_t> new_strides(shape.size());
 
-    // Handle scalar tensors and empty tensors separately.
-    if (this->ndim() == 0 || this->numel() == 0) {
-        ptrdiff_t stride = 1;
+	ptrdiff_t expected_stride = 1;
 
-        for (size_t i = shape.size(); i > 0; --i) {
-            const size_t dim = i - 1;
-            new_strides[dim] = stride;
-            stride *= static_cast<ptrdiff_t>(shape[dim]);
-        }
+	for (size_t i = shape.size(); i > 0; --i) {
+		const size_t dim = i - 1;
 
-        TensorMeta meta{
-            this->dtype(),
-            shape,
-            new_strides,
-        };
+		new_strides[dim] = expected_stride;
 
-        return std::shared_ptr<Tensor>(new Tensor(std::move(meta), _storage, _offset));
-    }
+		// Each outer dimension skips all elements contained
+		// in the dimensions to its right.
+		expected_stride *= static_cast<ptrdiff_t>(shape[dim]);
+	}
 
-    // For non-scalar tensors, we need to check if the new shape is compatible with the original tensor's strides.
-    // view_dim is the current dimension in the new view shape that we are trying to fill with strides.
-    ptrdiff_t view_dim = static_cast<ptrdiff_t>(shape.size()) - 1;
+	TensorMeta meta{
+		this->dtype(),
+		shape,
+		std::move(new_strides),
+	};
 
-    ptrdiff_t chunk_base_stride = this->strides().back(); // Last dimension's stride is the base stride for the current chunk of dimensions in the original tensor.
-
-    size_t tensor_chunk_numel = 1; // The number of elements in the current chunk of dimensions in the original tensor.
-    size_t view_chunk_numel = 1;   // The number of elements dispatched in the current chunk of dimensions.
-
-    // Iterate over the original tensor's dimensions in reverse order to check compatibility with the new view shape.
-    for (ptrdiff_t tensor_dim = static_cast<ptrdiff_t>(this->ndim()) - 1; tensor_dim >= 0; --tensor_dim) {
-
-        // Update the number of elements in the current chunk of dimensions in the original tensor.
-        tensor_chunk_numel *= this->shape()[static_cast<size_t>(tensor_dim)];
-
-        // Case 1: if the current dimension is 0
-        // Case 2: if the current dimension is not 0, but the next dimension is not 1 and the stride of the next dimension is not equal to the product of the number of elements in the current chunk and the base stride of the current chunk.
-        // If the previous dimension is 1, we can skip it because it does not affect the contiguity of the tensor.
-        const bool end_of_chunk = tensor_dim == 0 || 
-                                  (this->shape()[static_cast<size_t>(tensor_dim - 1)] != 1 && 
-                                  this->strides()[static_cast<size_t>(tensor_dim - 1)] != static_cast<ptrdiff_t>(tensor_chunk_numel) * chunk_base_stride);
-
-        if (!end_of_chunk) {
-            continue;
-        }
-
-        // Start filling the new strides for the view tensor from the current view dimension downwards, 
-        // as long as the number of elements in the current chunk of dimensions in the view tensor is less than 
-        // the number of elements in the current chunk of dimensions in the original tensor, 
-        //or if the size of the current dimension in the view tensor is 1 (which can be broadcasted).
-        while (view_dim >= 0 && 
-               (view_chunk_numel < tensor_chunk_numel || shape[static_cast<size_t>(view_dim)] == 1)) {
-            
-            // Set the stride for the current view dimension based on the number of elements 
-            //in the current chunk of dimensions in the view tensor and the base stride of the current chunk in the original tensor.
-            new_strides[static_cast<size_t>(view_dim)] = static_cast<ptrdiff_t>(view_chunk_numel) * chunk_base_stride;
-
-            // Update the number of elements in the current chunk of dimensions in the view tensor.
-            view_chunk_numel *= shape[static_cast<size_t>(view_dim)];
-            
-            // Move to the next dimension in the view tensor.
-            --view_dim;
-        }
-
-        // After filling the new strides for the view tensor, check if the number of elements in the current chunk of dimensions in the view tensor matches that of the original tensor.
-        if (view_chunk_numel != tensor_chunk_numel) {
-            throw std::runtime_error(
-                "View shape is incompatible with tensor strides");
-        }
-
-        // Reset the number of elements in the current chunk of dimensions in the view tensor for the next chunk.
-        if (tensor_dim > 0) {
-            chunk_base_stride = this->strides()[static_cast<size_t>(tensor_dim - 1)];
-
-            tensor_chunk_numel = 1;
-            view_chunk_numel = 1;
-        }
-    }
-
-    if (view_dim != -1) {
-        throw std::runtime_error(
-            "View shape is incompatible with tensor strides");
-    }
-
-    TensorMeta meta{
-        this->dtype(),
-        shape,
-        new_strides,
-    };
-
-    return std::shared_ptr<Tensor>(
-        new Tensor(std::move(meta), _storage, _offset));
+	return std::shared_ptr<Tensor>(
+		new Tensor(
+			std::move(meta),
+			this->_storage,
+			this->_offset
+		)
+	);
 }
 
 
-/*
-Create a new tensor which slices the original tensor along the given dimension, start (inclusive) and end (exclusive) indices.
-*/
-tensor_t Tensor::slice(
-    size_t dim,
-    size_t start,
-    size_t end) const {
+tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 
-    if (dim >= this->ndim()) {
-        throw std::runtime_error(
-            "Slice dimension is out of range");
-    }
+	// The sliced dimension must exist in the tensor.
+	CHECK_ARGUMENT(
+		dim < this->ndim(),
+		"Slice dimension is out of range"
+	);
 
-    if (start > end) {
-        throw std::runtime_error(
-            "Slice start must not be greater than end");
-    }
+	// Allow start == end so that an empty slice can be represented.
+	CHECK_ARGUMENT(
+		start <= end,
+		"Slice start must not be greater than end"
+	);
 
-    if (end > this->shape()[dim]) {
-        throw std::runtime_error(
-            "Slice end is out of range");
-    }
+	// The end index is exclusive and may equal the dimension size.
+	CHECK_ARGUMENT(
+		end <= this->shape()[dim],
+		"Slice end is out of range"
+	);
 
-    std::vector<size_t> new_shape = this->shape();
-    new_shape[dim] = end - start;
+	// This implementation assumes that strides describe forward memory
+	// traversal. Negative strides would require signed offset handling.
+	CHECK_ARGUMENT(
+		this->strides()[dim] >= 0,
+		"Slice does not support negative strides"
+	);
 
-    const ptrdiff_t element_offset = static_cast<ptrdiff_t>(start) * this->strides()[dim];
+	// Only the size of the selected dimension changes.
+	// All other dimensions retain their original sizes.
+	std::vector<size_t> new_shape = this->shape();
+	new_shape[dim] = end - start;
 
-    const size_t byte_offset = static_cast<size_t>(element_offset) * this->elementSize();
+	// Calculate how many elements must be skipped along the selected
+	// dimension before reaching the first element of the slice.
+	const ptrdiff_t element_offset = static_cast<ptrdiff_t>(start) * this->strides()[dim];
 
-    TensorMeta meta{
-        this->dtype(),
-        std::move(new_shape),
-        this->strides(),
-    };
+	// Tensor offsets are stored in bytes, so convert the element offset
+	// using the size of one tensor element.
+	const size_t byte_offset = static_cast<size_t>(element_offset) * this->elementSize();
 
-    return std::shared_ptr<Tensor>(
-        new Tensor(
-            std::move(meta),
-            _storage,
-            _offset + byte_offset));
+	TensorMeta meta{
+		this->dtype(),
+		std::move(new_shape),
+		this->strides(),
+	};
+
+	return std::shared_ptr<Tensor>(
+		new Tensor(
+			std::move(meta),
+			this->_storage,
+			this->_offset + byte_offset
+		)
+	);
 }
 
-/*
-Load host (cpu) data to the tensor (can be on device).
-Check contructor to see how to get runtime apis of the current device context,
-and do a memcpy from host to device.
-*/
+
 void Tensor::load(const void *src_) {
-    const size_t nbytes = this->numel() * this->elementSize();
+	// The source buffer is provided by the caller and must be valid.
+	CHECK_ARGUMENT(
+		src_ != nullptr,
+		"Source pointer is null"
+	);
 
-    core::context().setDevice(
-        this->deviceType(),
-        this->deviceId());
+	// Every valid tensor should own or reference an allocated storage object.
+	ASSERT(
+		_storage != nullptr,
+		"Tensor storage is null"
+	);
 
-    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
-        std::memcpy(
-            this->data(),
-            src_,
-            nbytes);
-    } else {
-        core::context().runtime().api()->memcpy_sync(
-            this->data(),
-            src_,
-            nbytes,
-            LLAISYS_MEMCPY_H2D);
-    }
+	// data() includes the tensor's offset inside the underlying storage.
+	// This is important for sliced tensors or tensor views.
+	CHECK_ARGUMENT(
+		this->data() != nullptr,
+		"Tensor data pointer is null"
+	);
+
+	// A single memcpy assumes that logical tensor elements are stored
+	// consecutively in memory. Non-contiguous tensors require strided copying.
+	CHECK_ARGUMENT(
+		this->isContiguous(),
+		"Tensor must be contiguous when loading data"
+	);
+
+	// Copy only the bytes belonging to this tensor, rather than the entire
+	// underlying storage, which may be shared with another tensor or view.
+	const size_t nbytes = this->numel() * this->elementSize();
+
+	// Nothing needs to be copied for an empty tensor.
+	if (nbytes == 0) {
+		return;
+	}
+
+	const auto device_type = this->deviceType();
+	const int device_id = this->deviceId();
+
+	auto &runtime = core::context().runtime();
+
+	// Switch the active runtime device only when it does not already match
+	// the device on which this tensor is allocated.
+	if (
+		runtime.deviceType() != device_type
+		|| runtime.deviceId() != device_id
+	) {
+		core::context().setDevice(
+			device_type,
+			device_id
+		);
+	}
+
+	if (device_type == LLAISYS_DEVICE_CPU) {
+		// CPU tensor memory is directly accessible from the host.
+		std::memcpy(
+			this->data(),
+			src_,
+			nbytes
+		);
+	} else {
+		// For accelerator tensors, use the runtime API to perform a
+		// synchronous host-to-device memory transfer.
+		core::context().runtime().api()->memcpy_sync(
+			this->data(),
+			src_,
+			nbytes,
+			LLAISYS_MEMCPY_H2D
+		);
+	}
 }
 
 tensor_t Tensor::contiguous() const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+
+	if (this->isContiguous()) {
+		return std::shared_ptr<Tensor>(
+			new Tensor(
+				this->_meta,
+				this->_storage,
+				this->_offset
+			)
+		);
+	}
+
+	tensor_t contiguous_tensor = Tensor::create(
+		this->shape(),
+		this->dtype(),
+		this->deviceType(),
+		this->deviceId()
+	);
+
+	// Create a wrapper for the current tensor so it can be passed to
+	// rearrange(). The wrapper preserves the original shape, strides,
+	// storage, and byte offset.
+	tensor_t source_tensor = std::shared_ptr<Tensor>(
+		new Tensor(
+			this->_meta,
+			this->_storage,
+			this->_offset
+		)
+	);
+
+	// Copy elements according to the original strides and store them
+	// in standard contiguous row-major order.
+	llaisys::ops::rearrange(
+		contiguous_tensor,
+		source_tensor
+	);
+
+	return contiguous_tensor;
 }
 
 tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+
+	if (this->isContiguous()) {
+		return this->view(shape);
+	}
+
+	return this->contiguous()->view(shape);
 }
 
-tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+// tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
+tensor_t Tensor::to(llaisysDeviceType_t device_type, int device_id ) const {
+
+	const auto source_device_type = this->deviceType();
+	const int source_device_id = this->deviceId();
+
+	// No transfer is needed when the requested device already matches.
+	// Return another tensor wrapper sharing the same storage and offset.
+	if (device_type == source_device_type && device_id == source_device_id) {
+		return std::shared_ptr<Tensor>(
+			new Tensor(
+				this->_meta,
+				this->_storage,
+				this->_offset
+			)
+		);
+	}
+
+	// A raw device copy requires a dense source memory region.
+	// contiguous() preserves logical element order and handles non-contiguous
+	// tensors such as permuted or sliced views.
+	tensor_t source = this->contiguous();
+
+	// create() allocates storage on the target device and generates
+	// standard row-major strides for the destination tensor.
+	tensor_t destination = Tensor::create(
+		source->shape(),
+		source->dtype(),
+		device_type,
+		device_id
+	);
+
+	const size_t total_bytes = source->numel() * source->elementSize();
+
+	if (total_bytes == 0) {
+		return destination;
+	}
+
+	if (source_device_type == LLAISYS_DEVICE_CPU && device_type == LLAISYS_DEVICE_CPU) {
+		// Host-to-host memory is directly accessible.
+		std::memcpy(
+			destination->data(),
+			source->data(),
+			total_bytes
+		);
+	} 
+    else if (source_device_type == LLAISYS_DEVICE_CPU && device_type != LLAISYS_DEVICE_CPU) {
+		// Activate the destination accelerator before H2D transfer.
+		core::context().setDevice(
+			device_type,
+			device_id
+		);
+
+		core::context().runtime().api()->memcpy_sync(
+			destination->data(),
+			source->data(),
+			total_bytes,
+			LLAISYS_MEMCPY_H2D
+		);
+	} 
+    else if (source_device_type != LLAISYS_DEVICE_CPU && device_type == LLAISYS_DEVICE_CPU) {
+		// Activate the source accelerator before D2H transfer.
+		core::context().setDevice(
+			source_device_type,
+			source_device_id
+		);
+
+		core::context().runtime().api()->memcpy_sync(
+			destination->data(),
+			source->data(),
+			total_bytes,
+			LLAISYS_MEMCPY_D2H
+		);
+	} 
+    else {
+		// This assumes that the runtime supports direct device-to-device
+		// transfer between the selected source and destination devices.
+		core::context().setDevice(
+			source_device_type,
+			source_device_id
+		);
+
+		core::context().runtime().api()->memcpy_sync(
+			destination->data(),
+			source->data(),
+			total_bytes,
+			LLAISYS_MEMCPY_D2D
+		);
+	}
+
+	return destination;
 }
 
 } // namespace llaisys
