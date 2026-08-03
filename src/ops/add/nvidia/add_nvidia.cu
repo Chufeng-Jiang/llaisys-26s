@@ -214,7 +214,7 @@ bool is_vector_aligned(const T *c, const T *a, const T *b) {
 // ============================================================
 
 template <typename T>
-void launch_add_kernel(T *c, const T *a, const T *b, std::size_t numel) {
+void launch_add_kernel(T *c, const T *a, const T *b, std::size_t numel, cudaStream_t stream) {
   // CUDA does not allow a kernel launch with zero blocks.
   if (numel == 0) {
     return;
@@ -250,9 +250,9 @@ void launch_add_kernel(T *c, const T *a, const T *b, std::size_t numel) {
   const dim3 grid_dim(static_cast<unsigned int>(grid_size));
 
   if (use_vectorized_kernel) {
-    add_kernel_vectorized<T><<<grid_dim, block_dim>>>(c, a, b, numel);
+    add_kernel_vectorized<T><<<grid_dim, block_dim, 0, stream>>>(c, a, b, numel);
   } else {
-    add_kernel<T><<<grid_dim, block_dim>>>(c, a, b, numel);
+    add_kernel<T><<<grid_dim, block_dim, 0, stream>>>(c, a, b, numel);
   }
 
   // Check kernel launch and configuration errors.
@@ -267,7 +267,7 @@ void launch_add_kernel(T *c, const T *a, const T *b, std::size_t numel) {
 // ============================================================
 
 void add(std::byte *c, const std::byte *a, const std::byte *b,
-         llaisysDataType_t type, std::size_t numel) {
+         llaisysDataType_t type, std::size_t numel, llaisysStream_t stream) {
   CHECK_ARGUMENT(numel == 0 || c != nullptr,
                  "Add: output pointer c must not be null.");
 
@@ -277,22 +277,29 @@ void add(std::byte *c, const std::byte *a, const std::byte *b,
   CHECK_ARGUMENT(numel == 0 || b != nullptr,
                  "Add: input pointer b must not be null.");
 
+  // llaisysStream_t is void* in the generic LLAISYS API.
+	// In the NVIDIA backend, it stores a cudaStream_t.
+	//
+	// nullptr is also valid and represents the CUDA default stream.
+	const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
+
+
   switch (type) {
     case LLAISYS_DTYPE_F32:
       return launch_add_kernel<float>(
           reinterpret_cast<float *>(c), reinterpret_cast<const float *>(a),
-          reinterpret_cast<const float *>(b), numel);
+          reinterpret_cast<const float *>(b), numel, cuda_stream);
 
     case LLAISYS_DTYPE_BF16:
       return launch_add_kernel<__nv_bfloat16>(
           reinterpret_cast<__nv_bfloat16 *>(c),
           reinterpret_cast<const __nv_bfloat16 *>(a),
-          reinterpret_cast<const __nv_bfloat16 *>(b), numel);
+          reinterpret_cast<const __nv_bfloat16 *>(b), numel, cuda_stream);
 
     case LLAISYS_DTYPE_F16:
       return launch_add_kernel<half>(reinterpret_cast<half *>(c),
                                      reinterpret_cast<const half *>(a),
-                                     reinterpret_cast<const half *>(b), numel);
+                                     reinterpret_cast<const half *>(b), numel, cuda_stream);
 
     default:
       EXCEPTION_UNSUPPORTED_DATATYPE(type);
