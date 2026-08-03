@@ -1,42 +1,32 @@
-#include "argmax_nvidia.cuh"
-
-#include "../../../device/nvidia/nvidia_common.cuh"
-#include "../../../utils.hpp"
-
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <type_traits>
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../utils.hpp"
+#include "argmax_nvidia.cuh"
 
 namespace {
 
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
-using llaisys::device::nvidia::div_ceil;
+using llaisys::device::nvidia::CUDA_MAX_WARPS_PER_BLOCK;
+using llaisys::device::nvidia::CUDA_WARP_SIZE;
+using llaisys::device::nvidia::from_float;
+using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::device::nvidia::get_warp_aligned_block_size;
+using llaisys::device::nvidia::to_float;
 
-// Large-input kernels use grid-stride loops, so the grid
-// does not need to grow without limit.
-inline constexpr std::size_t MAX_GRID_SIZE = 4096;
-
-// Small inputs are completed by one block and one kernel.
+// Inputs no larger than this threshold use one CUDA block and
+// do not require the reusable packed workspace.
 inline constexpr std::size_t SINGLE_BLOCK_THRESHOLD = 4096;
 
-inline constexpr unsigned int WARP_SIZE = 32;
-
-// Reserved as the invalid-result sentinel.
+// UINT32_MAX is reserved as the invalid-result sentinel.
 //
 // Therefore, the largest valid index is UINT32_MAX - 1.
 inline constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
 
-static_assert(CUDA_BLOCK_SIZE % WARP_SIZE == 0,
-              "CUDA_BLOCK_SIZE must be divisible by 32.");
-
-static_assert(CUDA_BLOCK_SIZE <= 1024, "CUDA_BLOCK_SIZE must not exceed 1024.");
-
+// Confirm that the LLAISYS custom 16-bit types have the same
+// storage size as the corresponding CUDA types.
 static_assert(sizeof(llaisys::fp16_t) == sizeof(half),
               "llaisys::fp16_t and CUDA half must have the same size.");
 
@@ -44,11 +34,13 @@ static_assert(
     sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
     "llaisys::bf16_t and CUDA __nv_bfloat16 must have the same size.");
 
-static_assert(sizeof(std::int64_t) == sizeof(unsigned long long),
-              "Argmax requires a 64-bit index output.");
+// Argmax uses a 64-bit packed value for atomicCAS.
+static_assert(sizeof(unsigned long long) == 8,
+              "Argmax requires unsigned long long to contain 64 bits.");
 
-template <typename>
-inline constexpr bool ALWAYS_FALSE = false;
+// The output index is stored as int64.
+static_assert(sizeof(std::int64_t) == 8,
+              "Argmax requires a 64-bit index output.");
 
 // ============================================================
 // Argmax result
@@ -59,8 +51,16 @@ struct MaxResult {
     std::uint32_t index;
 };
 
+// An invalid result means that the current thread has not
+// processed any valid input elements yet.
+//
+// The value field is only a placeholder. Validity is determined
+// by the index field.
 __host__ __device__ constexpr MaxResult invalid_result() {
-    return MaxResult{0.0F, INVALID_INDEX};
+    return MaxResult{
+        0.0F,
+        INVALID_INDEX,
+    };
 }
 
 __host__ __device__ constexpr bool is_valid(const MaxResult &result) {
@@ -68,49 +68,17 @@ __host__ __device__ constexpr bool is_valid(const MaxResult &result) {
 }
 
 // ============================================================
-// Type conversion
-// ============================================================
-
-template <typename T>
-__device__ __forceinline__ float to_accumulator(T value) {
-    if constexpr (std::is_same_v<T, float>) {
-        return value;
-
-    } else if constexpr (std::is_same_v<T, half>) {
-        return __half2float(value);
-
-    } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-        return __bfloat162float(value);
-
-    } else {
-        static_assert(ALWAYS_FALSE<T>, "Unsupported NVIDIA Argmax input type.");
-    }
-}
-
-template <typename T>
-__device__ __forceinline__ T from_accumulator(float value) {
-    if constexpr (std::is_same_v<T, float>) {
-        return value;
-
-    } else if constexpr (std::is_same_v<T, half>) {
-        return __float2half(value);
-
-    } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-        return __float2bfloat16(value);
-
-    } else {
-        static_assert(ALWAYS_FALSE<T>, "Unsupported NVIDIA Argmax output type.");
-    }
-}
-
-// ============================================================
 // Comparison
 // ============================================================
 
-// NaN is treated as greater than a non-NaN value.
+// Comparison rules:
 //
-// When values are equal, the smaller index is selected.
-// This makes CUDA behavior consistent with the CPU version.
+// 1. NaN is treated as greater than a non-NaN value.
+// 2. A numerically greater value wins.
+// 3. When values are equal, the smaller index wins.
+//
+// These rules keep NVIDIA behavior consistent with the CPU
+// Argmax implementation.
 __device__ __forceinline__ bool is_better(float candidate_value,
                                           std::uint32_t candidate_index,
                                           float current_value,
@@ -134,6 +102,10 @@ __device__ __forceinline__ bool is_better(float candidate_value,
     return candidate_index < current_index;
 }
 
+// Update result when:
+//
+// 1. The current result is invalid.
+// 2. The candidate is better according to is_better().
 __device__ __forceinline__ void update_result(MaxResult &result,
                                               float candidate_value,
                                               std::uint32_t candidate_index) {
@@ -147,15 +119,21 @@ __device__ __forceinline__ void update_result(MaxResult &result,
 // Warp reduction
 // ============================================================
 
+// Reduce one MaxResult per thread inside a CUDA warp.
+//
+// After completion, lane 0 contains the complete result for
+// the current warp. Other lanes may contain partial results.
 __device__ __forceinline__ MaxResult warp_reduce_argmax(MaxResult result) {
-    // All supported block sizes are multiples of 32.
-    constexpr unsigned int mask = 0xFFFFFFFFU;
+    // All supported block sizes are complete multiples of
+    // CUDA_WARP_SIZE, so every lane participates.
+    constexpr unsigned int FULL_WARP_MASK = 0xFFFFFFFFU;
 
 #pragma unroll
-    for (int offset = static_cast<int>(WARP_SIZE / 2); offset > 0; offset >>= 1) {
-        const float other_value = __shfl_down_sync(mask, result.value, offset);
+    for (int offset = static_cast<int>(CUDA_WARP_SIZE / 2); offset > 0;
+         offset >>= 1) {
+        const float other_value = __shfl_down_sync(FULL_WARP_MASK, result.value, offset);
 
-        const std::uint32_t other_index = __shfl_down_sync(mask, result.index, offset);
+        const std::uint32_t other_index = __shfl_down_sync(FULL_WARP_MASK, result.index, offset);
 
         if (other_index != INVALID_INDEX) {
             update_result(result, other_value, other_index);
@@ -167,37 +145,46 @@ __device__ __forceinline__ MaxResult warp_reduce_argmax(MaxResult result) {
 
 // ============================================================
 // Reusable block reduction
-// ============================================================
-
-// This helper is used by both:
-// - argmax_single_block_kernel;
-// - argmax_multi_block_kernel.
 //
-// All threads in the block must call this function because it
+// This helper is used by both:
+//
+// - argmax_single_block_kernel
+// - argmax_multi_block_kernel
+//
+// Every thread in the block must call this helper because it
 // contains __syncthreads().
 //
-// After completion, thread 0 contains the block result.
+// After completion, thread 0 contains the complete block result.
+// ============================================================
+
 __device__ __forceinline__ MaxResult
 block_reduce_argmax(MaxResult thread_result, MaxResult *warp_results) {
-    const unsigned int lane_id = threadIdx.x & (WARP_SIZE - 1);
+    constexpr unsigned int warp_size = static_cast<unsigned int>(CUDA_WARP_SIZE);
 
-    const unsigned int warp_id = threadIdx.x / WARP_SIZE;
+    const unsigned int lane_id = threadIdx.x & (warp_size - 1U);
 
-    const unsigned int num_warps = (blockDim.x + WARP_SIZE - 1) / WARP_SIZE;
+    const unsigned int warp_id = threadIdx.x / warp_size;
 
-    // First level: reduce inside each warp.
+    const unsigned int num_warps = (blockDim.x + warp_size - 1U) / warp_size;
+
+    // First reduction level:
+    // reduce the thread results inside each warp.
     thread_result = warp_reduce_argmax(thread_result);
 
-    // Each warp leader writes one result.
+    // Lane 0 of each warp writes that warp's result into
+    // shared memory.
     if (lane_id == 0) {
         warp_results[warp_id] = thread_result;
     }
 
+    // Ensure all warp leaders have written their results before
+    // the first warp starts reading shared memory.
     __syncthreads();
 
     MaxResult block_result = invalid_result();
 
-    // Second level: the first warp reduces all warp results.
+    // Second reduction level:
+    // the first warp reduces all warp results.
     if (warp_id == 0) {
         if (lane_id < num_warps) {
             block_result = warp_results[lane_id];
@@ -211,10 +198,17 @@ block_reduce_argmax(MaxResult thread_result, MaxResult *warp_results) {
 
 // ============================================================
 // Packed result helpers
+//
+// High 32 bits:
+//     raw FP32 bit representation.
+//
+// Low 32 bits:
+//     uint32 index.
+//
+// Packing the value and index into one 64-bit value allows them
+// to be updated together using one atomicCAS operation.
 // ============================================================
 
-// High 32 bits: raw FP32 bits.
-// Low 32 bits: uint32 index.
 __device__ __forceinline__ unsigned long long pack_result(float value,
                                                           std::uint32_t index) {
     const unsigned int value_bits = __float_as_uint(value);
@@ -228,8 +222,8 @@ __device__ __forceinline__ float unpack_value(unsigned long long packed) {
     return __uint_as_float(value_bits);
 }
 
-__device__ __forceinline__ std::uint32_t
-unpack_index(unsigned long long packed) {
+__device__ __forceinline__ std::uint32_t unpack_index(
+    unsigned long long packed) {
     return static_cast<std::uint32_t>(packed & 0xFFFFFFFFULL);
 }
 
@@ -237,14 +231,15 @@ unpack_index(unsigned long long packed) {
 // Global atomic merge
 // ============================================================
 
-__device__ __forceinline__ void
-atomic_update_result(unsigned long long *packed_workspace,
-                     const MaxResult &candidate) {
+// Atomically merge one block-level Argmax candidate into the
+// global packed workspace.
+__device__ __forceinline__ void atomic_update_result(
+    unsigned long long *packed_workspace, const MaxResult &candidate) {
     if (!is_valid(candidate)) {
         return;
     }
 
-    // Atomic 64-bit read.
+    // Perform an atomic 64-bit read without changing the value.
     unsigned long long observed = atomicCAS(packed_workspace, 0ULL, 0ULL);
 
     while (true) {
@@ -254,6 +249,7 @@ atomic_update_result(unsigned long long *packed_workspace,
 
         const bool current_valid = current_index != INVALID_INDEX;
 
+        // The candidate cannot improve the current global result.
         if (current_valid && !is_better(candidate.value, candidate.index, current_value, current_index)) {
             return;
         }
@@ -262,11 +258,14 @@ atomic_update_result(unsigned long long *packed_workspace,
 
         const unsigned long long previous = atomicCAS(packed_workspace, observed, desired);
 
+        // The workspace still contained observed, so this thread
+        // successfully replaced it with desired.
         if (previous == observed) {
             return;
         }
 
-        // Another block updated the workspace.
+        // Another block updated the workspace before this CAS.
+        // Compare the candidate against the newer result.
         observed = previous;
     }
 }
@@ -275,29 +274,35 @@ atomic_update_result(unsigned long long *packed_workspace,
 // Small-input kernel
 // ============================================================
 
+// One CUDA block processes the entire input.
+//
+// This path directly writes the final output and does not use
+// the reusable packed workspace.
 template <typename T>
 __global__ void argmax_single_block_kernel(std::int64_t *__restrict__ max_idx,
                                            T *__restrict__ max_val,
                                            const T *__restrict__ vals,
                                            std::size_t numel) {
-    // Maximum CUDA block size is 1024 threads:
-    // 1024 / 32 = 32 warps.
-    __shared__ MaxResult warp_results[32];
+    // One CUDA block contains at most 32 warps.
+    __shared__ MaxResult warp_results[CUDA_MAX_WARPS_PER_BLOCK];
 
     MaxResult thread_result = invalid_result();
 
+    // Block-stride loop:
+    // every thread processes zero or more input elements.
     for (std::size_t i = threadIdx.x; i < numel; i += blockDim.x) {
-        const float value = to_accumulator(vals[i]);
+        const float value = to_float(vals[i]);
 
         update_result(thread_result, value, static_cast<std::uint32_t>(i));
     }
 
     const MaxResult block_result = block_reduce_argmax(thread_result, warp_results);
 
+    // Thread 0 contains the complete block result.
     if (threadIdx.x == 0 && is_valid(block_result)) {
         *max_idx = static_cast<std::int64_t>(block_result.index);
 
-        *max_val = from_accumulator<T>(block_result.value);
+        *max_val = from_float<T>(block_result.value);
     }
 }
 
@@ -305,8 +310,11 @@ __global__ void argmax_single_block_kernel(std::int64_t *__restrict__ max_idx,
 // Workspace initialization
 // ============================================================
 
-__global__ void
-initialize_argmax_workspace_kernel(unsigned long long *packed_workspace) {
+// Reset the reusable workspace before the multi-block reduction.
+//
+// INVALID_INDEX means that no block has submitted a valid result yet.
+__global__ void initialize_argmax_workspace_kernel(
+    unsigned long long *packed_workspace) {
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         *packed_workspace = pack_result(0.0F, INVALID_INDEX);
     }
@@ -316,11 +324,15 @@ initialize_argmax_workspace_kernel(unsigned long long *packed_workspace) {
 // Large-input kernel
 // ============================================================
 
+// Multiple CUDA blocks process the input.
+//
+// Every block first performs a local reduction and then submits
+// one result to the shared global workspace.
 template <typename T>
-__global__ void
-argmax_multi_block_kernel(unsigned long long *__restrict__ packed_workspace,
-                          const T *__restrict__ vals, std::size_t numel) {
-    __shared__ MaxResult warp_results[32];
+__global__ void argmax_multi_block_kernel(
+    unsigned long long *__restrict__ packed_workspace,
+    const T *__restrict__ vals, std::size_t numel) {
+    __shared__ MaxResult warp_results[CUDA_MAX_WARPS_PER_BLOCK];
 
     const std::size_t start = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
 
@@ -328,15 +340,17 @@ argmax_multi_block_kernel(unsigned long long *__restrict__ packed_workspace,
 
     MaxResult thread_result = invalid_result();
 
+    // Grid-stride loop:
+    // every thread can process multiple input elements.
     for (std::size_t i = start; i < numel; i += stride) {
-        const float value = to_accumulator(vals[i]);
+        const float value = to_float(vals[i]);
 
         update_result(thread_result, value, static_cast<std::uint32_t>(i));
     }
 
     const MaxResult block_result = block_reduce_argmax(thread_result, warp_results);
 
-    // Only one global atomic update per block.
+    // Submit only one global atomic update per block.
     if (threadIdx.x == 0) {
         atomic_update_result(packed_workspace, block_result);
     }
@@ -346,6 +360,10 @@ argmax_multi_block_kernel(unsigned long long *__restrict__ packed_workspace,
 // Final output kernel
 // ============================================================
 
+// Convert the packed global result into:
+//
+// - an int64 output index;
+// - a maximum value using the requested output dtype.
 template <typename T>
 __global__ void finalize_argmax_result_kernel(
     const unsigned long long *__restrict__ packed_workspace,
@@ -366,19 +384,7 @@ __global__ void finalize_argmax_result_kernel(
 
     *max_idx = static_cast<std::int64_t>(index);
 
-    *max_val = from_accumulator<T>(value);
-}
-
-// ============================================================
-// Launch configuration
-// ============================================================
-
-unsigned int get_single_block_size(std::size_t numel) {
-    const std::size_t rounded_size = div_ceil(numel, static_cast<std::size_t>(WARP_SIZE)) * WARP_SIZE;
-
-    const std::size_t block_size = std::min(static_cast<std::size_t>(CUDA_BLOCK_SIZE), std::max(static_cast<std::size_t>(WARP_SIZE), rounded_size));
-
-    return static_cast<unsigned int>(block_size);
+    *max_val = from_float<T>(value);
 }
 
 // ============================================================
@@ -391,9 +397,14 @@ void launch_argmax_kernel(std::int64_t *max_idx, T *max_val, const T *vals,
                           unsigned long long *packed_workspace,
                           cudaStream_t stream) {
     // Small-input fast path:
-    // one block, one kernel, no workspace needed.
+    //
+    // - one block;
+    // - one kernel;
+    // - no packed workspace;
+    // - no global atomic operation;
+    // - no finalize kernel.
     if (numel <= SINGLE_BLOCK_THRESHOLD) {
-        const unsigned int block_size = get_single_block_size(numel);
+        const unsigned int block_size = get_warp_aligned_block_size(numel);
 
         argmax_single_block_kernel<T>
             <<<1, block_size, 0, stream>>>(max_idx, max_val, vals, numel);
@@ -402,28 +413,30 @@ void launch_argmax_kernel(std::int64_t *max_idx, T *max_val, const T *vals,
         return;
     }
 
+    // Large-input path.
     constexpr std::size_t block_size = CUDA_BLOCK_SIZE;
 
-    const std::size_t required_blocks = div_ceil(numel, block_size);
+    const std::size_t grid_size = get_capped_grid_size(numel, block_size);
 
-    const std::size_t grid_size = std::min(required_blocks, MAX_GRID_SIZE);
+    const dim3 block_dimension(static_cast<unsigned int>(block_size));
 
-    const dim3 block_dim(static_cast<unsigned int>(block_size));
+    const dim3 grid_dimension(static_cast<unsigned int>(grid_size));
 
-    const dim3 grid_dim(static_cast<unsigned int>(grid_size));
-
-    // Kernel 1: initialize reusable workspace.
+    // Kernel 1:
+    // initialize the reusable packed workspace.
     initialize_argmax_workspace_kernel<<<1, 1, 0, stream>>>(packed_workspace);
 
     CUDA_CHECK(cudaGetLastError());
 
-    // Kernel 2: parallel multi-block reduction.
-    argmax_multi_block_kernel<T>
-        <<<grid_dim, block_dim, 0, stream>>>(packed_workspace, vals, numel);
+    // Kernel 2:
+    // run the multi-block reduction.
+    argmax_multi_block_kernel<T><<<grid_dimension, block_dimension, 0, stream>>>(
+        packed_workspace, vals, numel);
 
     CUDA_CHECK(cudaGetLastError());
 
-    // Kernel 3: convert packed result to output dtype.
+    // Kernel 3:
+    // write the packed result into the requested output tensors.
     finalize_argmax_result_kernel<T>
         <<<1, 1, 0, stream>>>(packed_workspace, max_idx, max_val);
 
@@ -431,6 +444,10 @@ void launch_argmax_kernel(std::int64_t *max_idx, T *max_val, const T *vals,
 }
 
 } // namespace
+
+// ============================================================
+// Public NVIDIA backend interface
+// ============================================================
 
 namespace llaisys::ops::nvidia {
 
@@ -467,17 +484,18 @@ void argmax(std::byte *max_idx, std::byte *max_val, const std::byte *vals,
             cuda_stream);
 
     case LLAISYS_DTYPE_F16:
-        return launch_argmax_kernel<half>(reinterpret_cast<std::int64_t *>(max_idx),
-                                          reinterpret_cast<half *>(max_val),
-                                          reinterpret_cast<const half *>(vals),
-                                          numel, packed_workspace, cuda_stream);
+        return launch_argmax_kernel<half>(
+            reinterpret_cast<std::int64_t *>(max_idx),
+            reinterpret_cast<half *>(max_val),
+            reinterpret_cast<const half *>(vals), numel, packed_workspace,
+            cuda_stream);
 
     case LLAISYS_DTYPE_BF16:
         return launch_argmax_kernel<__nv_bfloat16>(
             reinterpret_cast<std::int64_t *>(max_idx),
             reinterpret_cast<__nv_bfloat16 *>(max_val),
-            reinterpret_cast<const __nv_bfloat16 *>(vals), numel, packed_workspace,
-            cuda_stream);
+            reinterpret_cast<const __nv_bfloat16 *>(vals), numel,
+            packed_workspace, cuda_stream);
 
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);
