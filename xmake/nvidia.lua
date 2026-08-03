@@ -50,5 +50,7 @@ target("llaisys-ops-nvidia")
 
     add_files("../src/ops/*/nvidia/*.cu")
 
+    add_links("cublas")
+
     on_install(function (target) end)
 target_end()
