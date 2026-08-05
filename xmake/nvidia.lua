@@ -50,6 +50,10 @@ target("llaisys-ops-nvidia")
 
     add_files("../src/ops/*/nvidia/*.cu")
 
+    add_includedirs(
+        "third_party/cudnn-frontend/include"
+    )
+
     add_links("cublas")
 
     on_install(function (target) end)
