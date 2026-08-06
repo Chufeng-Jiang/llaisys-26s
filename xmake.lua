@@ -55,18 +55,58 @@ target_end()
 
 target("llaisys-core")
     set_kind("static")
+
     add_deps("llaisys-utils")
     add_deps("llaisys-device")
 
     set_languages("cxx17")
     set_warnings("all", "error")
+
     if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags(
+            "-fPIC",
+            "-Wno-unknown-pragmas"
+        )
+    end
+
+    if has_config("nv-gpu") then
+        on_config(function (target)
+            local cuda_root = get_config("cuda")
+
+            if not cuda_root then
+                raise(
+                    "CUDA Toolkit directory was not detected"
+                )
+            end
+
+            local cuda_include_dir = path.join(
+                cuda_root,
+                "include"
+            )
+
+            if not os.isdir(cuda_include_dir) then
+                raise(
+                    "CUDA include directory not found: "
+                        .. cuda_include_dir
+                )
+            end
+
+            target:add(
+                "includedirs",
+                cuda_include_dir
+            )
+
+            cprint(
+                "${cyan}llaisys-core CUDA headers: %s",
+                cuda_include_dir
+            )
+        end)
     end
 
     add_files("src/core/*/*.cpp")
 
-    on_install(function (target) end)
+    on_install(function (target)
+    end)
 target_end()
 
 target("llaisys-tensor")
