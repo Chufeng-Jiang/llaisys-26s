@@ -25,15 +25,6 @@ inline constexpr std::size_t SINGLE_BLOCK_THRESHOLD = 4096;
 // Therefore, the largest valid index is UINT32_MAX - 1.
 inline constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
 
-// Confirm that the LLAISYS custom 16-bit types have the same
-// storage size as the corresponding CUDA types.
-static_assert(sizeof(llaisys::fp16_t) == sizeof(half),
-              "llaisys::fp16_t and CUDA half must have the same size.");
-
-static_assert(
-    sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
-    "llaisys::bf16_t and CUDA __nv_bfloat16 must have the same size.");
-
 // Argmax uses a 64-bit packed value for atomicCAS.
 static_assert(sizeof(unsigned long long) == 8,
               "Argmax requires unsigned long long to contain 64 bits.");

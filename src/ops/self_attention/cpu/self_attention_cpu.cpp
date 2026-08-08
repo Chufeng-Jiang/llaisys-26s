@@ -13,6 +13,7 @@
 namespace {
 
 using llaisys::device::cpu::OPENMP_THRESHOLD;
+using llaisys::utils::checked_product;
 
 inline constexpr std::size_t MAX_QUERY_TILE_SIZE = 16;
 inline constexpr std::size_t TARGET_WORKSPACE_BYTES = 64 * 1024;
@@ -25,20 +26,6 @@ struct AttentionWorkspace {
 	std::vector<float> maximum;
 	std::vector<float> denominator;
 };
-
-std::size_t checked_product(
-	std::size_t left,
-	std::size_t right,
-	const char *message
-) {
-	CHECK_ARGUMENT(
-		left == 0
-			|| right <= std::numeric_limits<std::size_t>::max() / left,
-		message
-	);
-
-	return left * right;
-}
 
 std::size_t saturating_sum(
 	std::size_t left,

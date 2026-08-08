@@ -13,14 +13,6 @@ using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::DEPENDENT_FALSE;
 using llaisys::device::nvidia::get_capped_grid_size;
 
-// Confirm that the LLAISYS custom 16-bit types have the same
-// storage size as the corresponding CUDA types.
-static_assert(sizeof(llaisys::fp16_t) == sizeof(half),
-              "llaisys::fp16_t and CUDA half must have the same size.");
-
-static_assert(
-    sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
-    "llaisys::bf16_t and CUDA __nv_bfloat16 must have the same size.");
 
 // ============================================================
 // Scalar addition

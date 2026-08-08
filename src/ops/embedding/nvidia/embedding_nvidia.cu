@@ -16,9 +16,6 @@ using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
 using llaisys::device::nvidia::PACKED_128_BYTES;
 using llaisys::device::nvidia::PACKED_128_ELEMENTS;
 
-static_assert(sizeof(llaisys::fp16_t) == sizeof(half), "llaisys::fp16_t and CUDA half must have the same size.");
-static_assert(sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16), "llaisys::bf16_t and CUDA __nv_bfloat16 must have the same size.");
-
 // ============================================================
 // Scalar kernel
 // ============================================================

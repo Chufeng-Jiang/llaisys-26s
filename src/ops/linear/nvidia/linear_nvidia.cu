@@ -17,31 +17,8 @@ namespace {
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
 using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::utils::checked_product;
 
-static_assert(
-	sizeof(llaisys::fp16_t) == sizeof(half),
-	"Linear: LLAISYS FP16 storage must match CUDA half storage."
-);
-
-static_assert(
-	sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
-	"Linear: LLAISYS BF16 storage must match CUDA BF16 storage."
-);
-
-std::size_t checked_product(
-	std::size_t left,
-	std::size_t right,
-	const char *message
-) {
-	CHECK_ARGUMENT(
-		left == 0
-			|| right
-				<= std::numeric_limits<std::size_t>::max() / left,
-		message
-	);
-
-	return left * right;
-}
 
 template <typename T>
 __global__ void broadcast_bias_kernel(

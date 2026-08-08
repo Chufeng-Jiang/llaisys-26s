@@ -501,16 +501,6 @@ void rms_norm(
 	std::size_t ncol,
 	llaisysStream_t stream
 ) {
-	static_assert(
-		sizeof(llaisys::fp16_t) == sizeof(half),
-		"RMSNorm: llaisys::fp16_t and CUDA half must match."
-	);
-
-	static_assert(
-		sizeof(llaisys::bf16_t)
-			== sizeof(__nv_bfloat16),
-		"RMSNorm: llaisys::bf16_t and CUDA BF16 must match."
-	);
 
 	const cudaStream_t cuda_stream =
 		reinterpret_cast<cudaStream_t>(

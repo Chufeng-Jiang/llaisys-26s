@@ -16,6 +16,7 @@ using llaisys::device::nvidia::from_float;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_float;
+using llaisys::utils::checked_product;
 
 // Cache cosine and sine values in dynamic shared memory when the
 // half-dimension is reasonably small.
@@ -30,35 +31,6 @@ using llaisys::device::nvidia::to_float;
 //
 // This is conservative for common NVIDIA GPUs.
 inline constexpr std::size_t MAX_CACHED_HALF_DIMENSION = 2048;
-
-static_assert(
-	sizeof(llaisys::fp16_t) == sizeof(half),
-	"RoPE: LLAISYS FP16 storage must match CUDA half storage."
-);
-
-static_assert(
-	sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
-	"RoPE: LLAISYS BF16 storage must match CUDA BF16 storage."
-);
-
-// ============================================================
-// Checked host-side integer multiplication
-// ============================================================
-
-std::size_t checked_product(
-	std::size_t left,
-	std::size_t right,
-	const char *message
-) {
-	CHECK_ARGUMENT(
-		left == 0
-			|| right
-				<= std::numeric_limits<std::size_t>::max() / left,
-		message
-	);
-
-	return left * right;
-}
 
 // ============================================================
 // RoPE angle

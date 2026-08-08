@@ -35,6 +35,7 @@ using llaisys::device::nvidia::CUDA_WARP_SIZE;
 using llaisys::device::nvidia::from_float;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::device::nvidia::to_float;
+using llaisys::utils::checked_product;
 
 inline constexpr std::size_t TILE_KV = 128;
 inline constexpr std::size_t WARP_COUNT =
@@ -50,31 +51,6 @@ static_assert(
 		<= llaisys::device::nvidia::CUDA_MAX_WARPS_PER_BLOCK,
 	"SelfAttention: warp count exceeds the common CUDA limit."
 );
-
-static_assert(
-	sizeof(llaisys::fp16_t) == sizeof(half),
-	"SelfAttention: LLAISYS FP16 storage must match CUDA half storage."
-);
-
-static_assert(
-	sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
-	"SelfAttention: LLAISYS BF16 storage must match CUDA BF16 storage."
-);
-
-std::size_t checked_product(
-	std::size_t left,
-	std::size_t right,
-	const char *message
-) {
-	CHECK_ARGUMENT(
-		left == 0
-			|| right
-				<= std::numeric_limits<std::size_t>::max() / left,
-		message
-	);
-
-	return left * right;
-}
 
 __device__ __forceinline__ float warp_reduce_sum(float value) {
 #pragma unroll

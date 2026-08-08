@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../../utils.hpp"
+
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -28,6 +30,17 @@ static_assert(CUDA_BLOCK_SIZE % CUDA_WARP_SIZE == 0,
 
 static_assert(CUDA_BLOCK_SIZE <= CUDA_MAX_THREADS_PER_BLOCK,
               "CUDA_BLOCK_SIZE exceeds the CUDA threads-per-block limit.");
+
+
+static_assert(
+	sizeof(llaisys::fp16_t) == sizeof(half),
+	"LLAISYS FP16 storage must match CUDA half storage."
+);
+
+static_assert(
+	sizeof(llaisys::bf16_t) == sizeof(__nv_bfloat16),
+	"LLAISYS BF16 storage must match CUDA BF16 storage."
+);
 
 // ============================================================
 // Template utilities

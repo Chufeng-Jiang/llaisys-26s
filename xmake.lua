@@ -170,3 +170,73 @@ target("llaisys")
         end
     end)
 target_end()
+
+
+target("test-context-device-switch")
+    set_kind("binary")
+
+    set_languages("cxx17")
+    set_warnings("all", "error")
+
+    add_includedirs("include")
+    add_includedirs("src")
+
+    add_deps("llaisys-core")
+    add_deps("llaisys-device")
+    add_deps("llaisys-device-cpu")
+    add_deps("llaisys-utils")
+
+    -- Provides llaisysGetRuntimeAPI().
+    add_files("src/llaisys/runtime.cc")
+
+    -- Test source.
+    add_files("tmp/test_context_device_switch.cpp")
+
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+
+        add_defines("ENABLE_NVIDIA_API")
+
+        add_syslinks(
+            "cublas",
+            "cudart"
+        )
+
+        on_config(function (target)
+            local cuda_root = get_config("cuda")
+
+            if not cuda_root then
+                raise(
+                    "CUDA Toolkit directory was not detected"
+                )
+            end
+
+            local cuda_include_dir =
+                path.join(
+                    cuda_root,
+                    "include"
+                )
+
+            local cuda_library_dir =
+                path.join(
+                    cuda_root,
+                    "lib64"
+                )
+
+            target:add(
+                "includedirs",
+                cuda_include_dir
+            )
+
+            target:add(
+                "linkdirs",
+                cuda_library_dir
+            )
+
+            target:add(
+                "rpathdirs",
+                cuda_library_dir
+            )
+        end)
+    end
+target_end()
