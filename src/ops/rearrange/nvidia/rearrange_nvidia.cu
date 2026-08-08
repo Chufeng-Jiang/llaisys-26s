@@ -20,6 +20,7 @@ using llaisys::device::nvidia::PACKED_128_ELEMENTS;
 using llaisys::device::nvidia::Packed128;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
+using llaisys::device::nvidia::to_cuda_stream;
 
 using llaisys::ops::rearrange_utils::layout_numel;
 using llaisys::ops::rearrange_utils::absolute_stride;
@@ -982,10 +983,7 @@ void rearrange(
 		"Rearrange: BF16 must occupy two bytes."
 	);
 
-	const cudaStream_t cuda_stream =
-		reinterpret_cast<cudaStream_t>(
-			stream
-		);
+	const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
 	switch (type) {
 	case LLAISYS_DTYPE_F32:

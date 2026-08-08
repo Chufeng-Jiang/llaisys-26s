@@ -61,7 +61,7 @@ llaisysStream_t createStream() {
 
   CUDA_CHECK(cudaStreamCreate(&stream));
 
-  return reinterpret_cast<llaisysStream_t>(stream);
+  return from_cuda_stream(stream);
 }
 
 void destroyStream(llaisysStream_t stream) {
@@ -72,12 +72,12 @@ void destroyStream(llaisysStream_t stream) {
     return;
   }
 
-  CUDA_CHECK(cudaStreamDestroy(reinterpret_cast<cudaStream_t>(stream)));
+  CUDA_CHECK(cudaStreamDestroy(to_cuda_stream(stream)));
 }
 
 void streamSynchronize(llaisysStream_t stream) {
   // Passing nullptr synchronizes the default CUDA stream.
-  CUDA_CHECK(cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream)));
+  CUDA_CHECK(cudaStreamSynchronize(to_cuda_stream(stream)));
 }
 
 // ============================================================
@@ -160,7 +160,7 @@ void memcpyAsync(void *dst, const void *src, std::size_t size,
   CHECK_ARGUMENT(src != nullptr, "NVIDIA memcpyAsync: src must not be null.");
 
   CUDA_CHECK(cudaMemcpyAsync(dst, src, size, toCudaMemcpyKind(kind),
-                             reinterpret_cast<cudaStream_t>(stream)));
+                             to_cuda_stream(stream)));
 }
 
 // ============================================================

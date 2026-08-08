@@ -5,6 +5,7 @@
 #include "llaisys.h"
 
 #include <cublas_v2.h>
+#include <cuda_runtime_api.h>
 
 namespace llaisys::device::nvidia {
 
@@ -13,7 +14,7 @@ class Resource final
 public:
 	explicit Resource(int device_id);
 
-	~Resource() override;
+	~Resource()  noexcept override;
 
 	// Prevent copying.
 	Resource(const Resource &) = delete;
@@ -53,15 +54,25 @@ void check_cublas(
 );
 
 // Return a reusable cuBLAS handle for the current host thread and current
-// CUDA device. The handle is rebound to the supplied LLAISYS Runtime stream
-// before it is returned.
-//
-// The provided Runtime API exposes streams but does not expose its private
-// DeviceResource object to operators. Keeping this handle pool in the NVIDIA
-// resource translation unit avoids modifying the generic Runtime interface.
+// CUDA device. The handle is rebound to the supplied CUDA stream before
+// it is returned.
 cublasHandle_t get_cublas_handle(
-	llaisysStream_t stream
+	cudaStream_t stream
 );
+
+// Return cached CUDA device properties for the current host thread.
+//
+// Device properties are effectively static for the lifetime of a CUDA
+// device, so querying them once avoids repeated cudaGetDeviceProperties()
+// calls from hot operator paths.
+const cudaDeviceProp &get_device_properties(
+	int device_id
+);
+
+// Convert a cuBLAS status code to a readable symbolic name.
+const char *cublas_status_name(
+	cublasStatus_t status
+) noexcept;
 
 } // namespace llaisys::device::nvidia
 

@@ -18,10 +18,19 @@ class CublasResource final {
 public:
 	explicit CublasResource(int device_id)
 		: _device_id(device_id) {
-		CUDA_CHECK(cudaSetDevice(_device_id));
+		CUDA_CHECK(
+			cudaSetDevice(
+				_device_id
+			)
+		);
 
 		cublasHandle_t handle = nullptr;
-		CUBLAS_CHECK(cublasCreate(&handle));
+
+		CUBLAS_CHECK(
+			cublasCreate(
+				&handle
+			)
+		);
 
 		try {
 			CUBLAS_CHECK(
@@ -40,7 +49,12 @@ public:
 				)
 			);
 		} catch (...) {
-			(void)cublasDestroy(handle);
+			// The constructor is still running on _device_id here.
+			// Best-effort cleanup is sufficient before rethrowing.
+			(void)cublasDestroy(
+				handle
+			);
+
 			throw;
 		}
 
@@ -52,23 +66,16 @@ public:
 			return;
 		}
 
-		int previous_device = -1;
-		const cudaError_t get_device_status =
-			cudaGetDevice(&previous_device);
+		llaisys::device::nvidia::run_on_cuda_device_noexcept(
+			_device_id,
+			[this]() noexcept {
+				(void)cublasDestroy(
+					_handle
+				);
 
-		// Destructors must not throw. Destroy the handle on the CUDA device
-		// with which it was created, then restore the prior device when known.
-		(void)cudaSetDevice(_device_id);
-		(void)cublasDestroy(_handle);
-		_handle = nullptr;
-
-		if (
-			get_device_status == cudaSuccess
-			&& previous_device >= 0
-			&& previous_device != _device_id
-		) {
-			(void)cudaSetDevice(previous_device);
-		}
+				_handle = nullptr;
+			}
+		);
 	}
 
 	CublasResource(const CublasResource &) = delete;
@@ -91,6 +98,14 @@ thread_local std::unordered_map<
 	std::unique_ptr<CublasResource>
 > cublas_resources;
 
+// CUDA device capabilities are effectively static. Keep one cached copy
+// per host thread and device, matching the thread-local NVIDIA resource
+// model used by the cuBLAS handle cache.
+thread_local std::unordered_map<
+	int,
+	cudaDeviceProp
+> device_properties_cache;
+
 } // namespace
 
 namespace llaisys::device::nvidia {
@@ -106,27 +121,21 @@ Resource::Resource(int device_id)
 	) {
 }
 
-Resource::~Resource() {
+Resource::~Resource() noexcept {
 	if (_argmax_packed_workspace == nullptr) {
 		return;
 	}
 
-	int previous_device = -1;
-	const cudaError_t get_device_status =
-		cudaGetDevice(&previous_device);
+	run_on_cuda_device_noexcept(
+		getDeviceId(),
+		[this]() noexcept {
+			(void)cudaFree(
+				_argmax_packed_workspace
+			);
 
-	// A destructor must not throw.
-	(void)cudaSetDevice(getDeviceId());
-	(void)cudaFree(_argmax_packed_workspace);
-	_argmax_packed_workspace = nullptr;
-
-	if (
-		get_device_status == cudaSuccess
-		&& previous_device >= 0
-		&& previous_device != getDeviceId()
-	) {
-		(void)cudaSetDevice(previous_device);
-	}
+			_argmax_packed_workspace = nullptr;
+		}
+	);
 }
 
 unsigned long long *Resource::argmaxPackedWorkspace() {
@@ -134,7 +143,11 @@ unsigned long long *Resource::argmaxPackedWorkspace() {
 		return _argmax_packed_workspace;
 	}
 
-	CUDA_CHECK(cudaSetDevice(getDeviceId()));
+	CUDA_CHECK(
+		cudaSetDevice(
+			getDeviceId()
+		)
+	);
 
 	CUDA_CHECK(
 		cudaMalloc(
@@ -152,26 +165,37 @@ unsigned long long *Resource::argmaxPackedWorkspace() {
 // cuBLAS error handling
 // ============================================================
 
-const char *cublas_status_name(cublasStatus_t status) noexcept {
+const char *cublas_status_name(
+	cublasStatus_t status
+) noexcept {
 	switch (status) {
 	case CUBLAS_STATUS_SUCCESS:
 		return "CUBLAS_STATUS_SUCCESS";
+
 	case CUBLAS_STATUS_NOT_INITIALIZED:
 		return "CUBLAS_STATUS_NOT_INITIALIZED";
+
 	case CUBLAS_STATUS_ALLOC_FAILED:
 		return "CUBLAS_STATUS_ALLOC_FAILED";
+
 	case CUBLAS_STATUS_INVALID_VALUE:
 		return "CUBLAS_STATUS_INVALID_VALUE";
+
 	case CUBLAS_STATUS_ARCH_MISMATCH:
 		return "CUBLAS_STATUS_ARCH_MISMATCH";
+
 	case CUBLAS_STATUS_MAPPING_ERROR:
 		return "CUBLAS_STATUS_MAPPING_ERROR";
+
 	case CUBLAS_STATUS_EXECUTION_FAILED:
 		return "CUBLAS_STATUS_EXECUTION_FAILED";
+
 	case CUBLAS_STATUS_INTERNAL_ERROR:
 		return "CUBLAS_STATUS_INTERNAL_ERROR";
+
 	case CUBLAS_STATUS_NOT_SUPPORTED:
 		return "CUBLAS_STATUS_NOT_SUPPORTED";
+
 	default:
 		return "CUBLAS_STATUS_UNKNOWN";
 	}
@@ -189,6 +213,7 @@ void check_cublas(
 	}
 
 	std::ostringstream message;
+
 	message
 		<< "cuBLAS error: "
 		<< cublas_status_name(status)
@@ -201,29 +226,44 @@ void check_cublas(
 		<< ':'
 		<< line;
 
-	throw std::runtime_error(message.str());
+	throw std::runtime_error(
+		message.str()
+	);
 }
 
 // ============================================================
 // Reusable cuBLAS handle
 // ============================================================
 
-cublasHandle_t get_cublas_handle(llaisysStream_t stream) {
+cublasHandle_t get_cublas_handle(
+	cudaStream_t stream
+) {
 	int device_id = -1;
-	CUDA_CHECK(cudaGetDevice(&device_id));
 
-	auto iterator = cublas_resources.find(device_id);
+	CUDA_CHECK(
+		cudaGetDevice(
+			&device_id
+		)
+	);
+
+	auto iterator =
+		cublas_resources.find(
+			device_id
+		);
 
 	if (iterator == cublas_resources.end()) {
 		auto resource =
-			std::make_unique<CublasResource>(device_id);
+			std::make_unique<CublasResource>(
+				device_id
+			);
 
-		iterator = cublas_resources
-			.emplace(
-				device_id,
-				std::move(resource)
-			)
-			.first;
+		iterator =
+			cublas_resources
+				.emplace(
+					device_id,
+					std::move(resource)
+				)
+				.first;
 	}
 
 	cublasHandle_t handle =
@@ -232,11 +272,44 @@ cublasHandle_t get_cublas_handle(llaisysStream_t stream) {
 	CUBLAS_CHECK(
 		cublasSetStream(
 			handle,
-			reinterpret_cast<cudaStream_t>(stream)
+			stream
 		)
 	);
 
 	return handle;
+}
+
+
+const cudaDeviceProp &get_device_properties(
+	int device_id
+) {
+	auto iterator =
+		device_properties_cache.find(
+			device_id
+		);
+
+	if (iterator != device_properties_cache.end()) {
+		return iterator->second;
+	}
+
+	cudaDeviceProp properties{};
+
+	CUDA_CHECK(
+		cudaGetDeviceProperties(
+			&properties,
+			device_id
+		)
+	);
+
+	auto [inserted_iterator, inserted] =
+		device_properties_cache.emplace(
+			device_id,
+			properties
+		);
+
+	(void)inserted;
+
+	return inserted_iterator->second;
 }
 
 } // namespace llaisys::device::nvidia

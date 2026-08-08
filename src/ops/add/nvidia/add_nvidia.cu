@@ -13,6 +13,7 @@ using llaisys::device::nvidia::are_aligned;
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::DEPENDENT_FALSE;
 using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::device::nvidia::to_cuda_stream;
 
 
 // ============================================================
@@ -206,7 +207,7 @@ void add(std::byte *c, const std::byte *a, const std::byte *b, llaisysDataType_t
     CHECK_ARGUMENT(numel == 0 || a != nullptr, "Add: input pointer a must not be null.");
     CHECK_ARGUMENT(numel == 0 || b != nullptr, "Add: input pointer b must not be null.");
 
-    const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
+    const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
     return llaisys::device::nvidia::dispatch_cuda_dtype(
         type,

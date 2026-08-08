@@ -2,6 +2,7 @@
 
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../device/nvidia/nvidia_dtype.cuh"
+#include "../../../device/nvidia/nvidia_resource.cuh"
 #include "../../../utils.hpp"
 
 #include <algorithm>
@@ -35,7 +36,11 @@ using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
 using llaisys::device::nvidia::CUDA_WARP_SIZE;
 using llaisys::device::nvidia::from_float;
 using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::device::nvidia::get_device_properties;
+using llaisys::device::nvidia::run_on_cuda_device_noexcept;
 using llaisys::device::nvidia::to_float;
+using llaisys::device::nvidia::to_cuda_stream;
+
 using llaisys::utils::checked_product;
 
 inline constexpr std::size_t TILE_KV = 128;
@@ -430,8 +435,10 @@ void launch_fallback(
 	int device = -1;
 	CUDA_CHECK(cudaGetDevice(&device));
 
-	cudaDeviceProp properties{};
-	CUDA_CHECK(cudaGetDeviceProperties(&properties, device));
+	const cudaDeviceProp &properties =
+		get_device_properties(
+			device
+		);
 
 	const std::size_t maximum_shared_bytes =
 		properties.sharedMemPerBlockOptin > 0
@@ -713,22 +720,12 @@ public:
 	}
 
 	~CudnnGraphEntry() noexcept {
-		int previous_device = -1;
-		const cudaError_t get_device_status =
-			cudaGetDevice(&previous_device);
-
-		// cuDNN handles and CUDA allocations belong to the device that
-		// was current when the graph entry was created.
-		(void)cudaSetDevice(_device_id);
-		release_resources_noexcept();
-
-		if (
-			get_device_status == cudaSuccess
-			&& previous_device >= 0
-			&& previous_device != _device_id
-		) {
-			(void)cudaSetDevice(previous_device);
-		}
+		run_on_cuda_device_noexcept(
+			_device_id,
+			[this]() noexcept {
+				release_resources_noexcept();
+			}
+		);
 	}
 
 	CudnnGraphEntry(const CudnnGraphEntry &) = delete;
@@ -966,17 +963,26 @@ bool cudnn_supports(
 		return false;
 	}
 
-	cudaDeviceProp properties{};
-	if (cudaGetDeviceProperties(&properties, device) != cudaSuccess) {
+	const cudaDeviceProp *properties = nullptr;
+
+	try {
+		properties =
+			&get_device_properties(
+				device
+			);
+	} catch (...) {
+		// Capability probing is best-effort. If the property query fails,
+		// fall back to the portable CUDA implementation instead of making
+		// cuDNN support mandatory.
 		return false;
 	}
 
-	if (properties.major < 8) {
+	if (properties->major < 8) {
 		return false;
 	}
 
 	const std::size_t maximum_dimension =
-		properties.major >= 9 ? 256 : 128;
+		properties->major >= 9 ? 256 : 128;
 
 	return d <= maximum_dimension
 		&& dv <= maximum_dimension;
@@ -1183,8 +1189,7 @@ void self_attention(
 		return;
 	}
 
-	const cudaStream_t cuda_stream =
-		reinterpret_cast<cudaStream_t>(stream);
+	const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
 #if LLAISYS_HAS_CUDNN_SDPA
 	if (try_cudnn(

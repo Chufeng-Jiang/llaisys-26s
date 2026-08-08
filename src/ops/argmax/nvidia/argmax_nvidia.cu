@@ -16,6 +16,7 @@ using llaisys::device::nvidia::from_float;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_float;
+using llaisys::device::nvidia::to_cuda_stream;
 
 // Inputs no larger than this threshold use one CUDA block and
 // do not require the reusable packed workspace.
@@ -465,7 +466,7 @@ void argmax(std::byte *max_idx, std::byte *max_val, const std::byte *vals,
     CHECK_ARGUMENT(numel <= SINGLE_BLOCK_THRESHOLD || packed_workspace != nullptr,
                    "Argmax: NVIDIA packed workspace must not be null.");
 
-    const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
+    const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
     return llaisys::device::nvidia::dispatch_cuda_dtype(
         type,

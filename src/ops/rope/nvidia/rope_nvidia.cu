@@ -17,6 +17,8 @@ using llaisys::device::nvidia::from_float;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_float;
+using llaisys::device::nvidia::to_cuda_stream;
+
 using llaisys::utils::checked_product;
 
 // Cache cosine and sine values in dynamic shared memory when the
@@ -484,11 +486,9 @@ void rope(
 	std::size_t d,
 	llaisysStream_t stream
 ) {
-	const cudaStream_t cuda_stream =
-		reinterpret_cast<cudaStream_t>(
-			stream
-		);
 
+	const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
+	
 	return llaisys::device::nvidia::dispatch_cuda_dtype(
 		type,
 		[&](auto tag) {

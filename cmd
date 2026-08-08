@@ -29,6 +29,8 @@ python test/ops/rms_norm.py --device nvidia
 python test/ops/rope.py --device nvidia
 python test/ops/self_attention.py --device nvidia
 python test/ops/swiglu.py --device nvidia
+python test/test_runtime.py --device nvidia
+
 
 python test/ops/add.py --device cpu
 python test/ops/argmax.py --device cpu
@@ -38,6 +40,8 @@ python test/ops/rms_norm.py --device cpu
 python test/ops/rope.py --device cpu
 python test/ops/self_attention.py --device cpu
 python test/ops/swiglu.py --device cpu
+python test/test_runtime.py --device cpu
+
 
 MODEL_PATH="$(cat tmp/model_path.txt)"
 python test/test_infer.py \

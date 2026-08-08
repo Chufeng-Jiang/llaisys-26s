@@ -21,6 +21,8 @@ using llaisys::device::nvidia::Packed128;
 using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
 using llaisys::device::nvidia::PACKED_128_ELEMENTS;
 using llaisys::device::nvidia::to_float;
+using llaisys::device::nvidia::to_cuda_stream;
+
 
 // CUB BlockReduce requires BLOCK_SIZE to be a compile-time constant.
 // These sizes are RMSNorm-specific scheduling choices, so they remain here.
@@ -32,6 +34,8 @@ inline constexpr unsigned int MEDIUM_BLOCK_SIZE =
 
 inline constexpr unsigned int LARGE_BLOCK_SIZE =
 	static_cast<unsigned int>(CUDA_BLOCK_SIZE);
+
+inline constexpr std::size_t MEDIUM_BLOCK_MAX_COLUMNS = 512;
 
 static_assert(
 	SMALL_BLOCK_SIZE <= MEDIUM_BLOCK_SIZE
@@ -459,7 +463,7 @@ void launch_rms_norm(
 		);
 	}
 
-	if (ncol <= 512) {
+	if (ncol <= MEDIUM_BLOCK_MAX_COLUMNS) {
 		return launch_rms_norm_kernel<
 			T,
 			MEDIUM_BLOCK_SIZE
@@ -503,10 +507,7 @@ void rms_norm(
 	llaisysStream_t stream
 ) {
 
-	const cudaStream_t cuda_stream =
-		reinterpret_cast<cudaStream_t>(
-			stream
-		);
+	const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
 	return llaisys::device::nvidia::dispatch_cuda_dtype(
 		type,

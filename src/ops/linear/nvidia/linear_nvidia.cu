@@ -19,7 +19,7 @@ using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
 using llaisys::device::nvidia::get_capped_grid_size;
 using llaisys::utils::checked_product;
-
+using llaisys::device::nvidia::to_cuda_stream;
 
 template <typename T>
 __global__ void broadcast_bias_kernel(
@@ -107,7 +107,7 @@ void launch_linear(
 	std::size_t row_count,
 	std::size_t output_features,
 	std::size_t input_features,
-	llaisysStream_t stream
+	cudaStream_t stream
 ) {
 	const std::size_t output_elements =
 		checked_product(
@@ -170,9 +170,6 @@ void launch_linear(
 		"Linear: input feature count exceeds the cuBLAS int limit."
 	);
 
-	const cudaStream_t cuda_stream =
-		reinterpret_cast<cudaStream_t>(stream);
-
 	// K == 0 means the matrix product contributes zero.
 	if (input_features == 0) {
 		initialize_output(
@@ -180,7 +177,7 @@ void launch_linear(
 			bias,
 			output_elements,
 			output_features,
-			cuda_stream
+			stream
 		);
 		return;
 	}
@@ -193,7 +190,7 @@ void launch_linear(
 			bias,
 			output_elements,
 			output_features,
-			cuda_stream
+			stream
 		);
 
 		beta = 1.0F;
@@ -261,6 +258,8 @@ void linear(
 	std::size_t ncol_in,
 	llaisysStream_t stream
 ) {
+	const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
+
 	return llaisys::device::nvidia::dispatch_cuda_dtype(
 		type,
 		[&](auto tag) {
@@ -274,7 +273,7 @@ void linear(
 				nrow,
 				ncol_out,
 				ncol_in,
-				stream
+				cuda_stream
 			);
 		}
 	);

@@ -16,6 +16,7 @@ using llaisys::device::nvidia::Packed128;
 using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
 using llaisys::device::nvidia::PACKED_128_BYTES;
 using llaisys::device::nvidia::PACKED_128_ELEMENTS;
+using llaisys::device::nvidia::to_cuda_stream;
 
 // ============================================================
 // Scalar kernel
@@ -191,7 +192,8 @@ namespace llaisys::ops::nvidia {
 void embedding(std::byte *out, const std::byte *index, const std::byte *weight,
                llaisysDataType_t type, std::size_t numel, std::size_t len,
                std::size_t vocabulary_size, llaisysStream_t stream) {
-    const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
+                
+    const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
 
     return llaisys::device::nvidia::dispatch_cuda_dtype(
         type,
