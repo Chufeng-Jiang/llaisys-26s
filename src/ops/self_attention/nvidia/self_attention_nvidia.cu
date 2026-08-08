@@ -10,12 +10,12 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <list>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 
 #if defined(ENABLE_CUDNN_API) \
 	&& __has_include(<cudnn.h>) \
@@ -492,6 +492,24 @@ inline constexpr std::int64_t K_UID = 2;
 inline constexpr std::int64_t V_UID = 3;
 inline constexpr std::int64_t O_UID = 4;
 
+// Safety guardrails for the thread-local cuDNN SDPA caches. Autoregressive
+// decoding can generate a distinct graph key for every total_len, so an
+// unbounded cache can retain graph objects, cuDNN handles, and workspaces
+// indefinitely. These capacities are intentionally easy to tune after
+// workload-specific benchmarking.
+inline constexpr std::size_t CUDNN_GRAPH_CACHE_CAPACITY_PER_DEVICE = 8;
+inline constexpr std::size_t CUDNN_REJECTED_CACHE_CAPACITY_PER_DEVICE = 64;
+
+static_assert(
+	CUDNN_GRAPH_CACHE_CAPACITY_PER_DEVICE > 0,
+	"SelfAttention: cuDNN graph cache capacity must be positive."
+);
+
+static_assert(
+	CUDNN_REJECTED_CACHE_CAPACITY_PER_DEVICE > 0,
+	"SelfAttention: cuDNN rejected cache capacity must be positive."
+);
+
 void check_cudnn(
 	cudnnStatus_t status,
 	const char *operation
@@ -566,121 +584,130 @@ public:
 	explicit CudnnGraphEntry(const CudnnGraphKey &key)
 		: _device_id(key.device) {
 		CUDA_CHECK(cudaSetDevice(_device_id));
-		check_cudnn(cudnnCreate(&_handle), "cudnnCreate");
 
-		const fe::DataType_t io_type =
-			key.type == LLAISYS_DTYPE_F16
-				? fe::DataType_t::HALF
-				: fe::DataType_t::BFLOAT16;
+		try {
+			check_cudnn(cudnnCreate(&_handle), "cudnnCreate");
 
-		_graph = std::make_shared<fe::graph::Graph>();
-		_graph
-			->set_io_data_type(io_type)
-			.set_intermediate_data_type(fe::DataType_t::FLOAT)
-			.set_compute_data_type(fe::DataType_t::FLOAT);
+			const fe::DataType_t io_type =
+				key.type == LLAISYS_DTYPE_F16
+					? fe::DataType_t::HALF
+					: fe::DataType_t::BFLOAT16;
 
-		const std::int64_t sequence_length =
-			static_cast<std::int64_t>(key.seqlen);
-		const std::int64_t total_length =
-			static_cast<std::int64_t>(key.total_len);
-		const std::int64_t query_heads =
-			static_cast<std::int64_t>(key.nhead);
-		const std::int64_t kv_heads =
-			static_cast<std::int64_t>(key.nkvhead);
-		const std::int64_t query_dimension =
-			static_cast<std::int64_t>(key.d);
-		const std::int64_t value_dimension =
-			static_cast<std::int64_t>(key.dv);
+			_graph = std::make_shared<fe::graph::Graph>();
+			_graph
+				->set_io_data_type(io_type)
+				.set_intermediate_data_type(fe::DataType_t::FLOAT)
+				.set_compute_data_type(fe::DataType_t::FLOAT);
 
-		// cuDNN descriptors use logical BHSD dimensions. Custom strides map
-		// them directly onto LLAISYS's contiguous [S, H, D] memory, so no
-		// transpose or temporary layout conversion is needed.
-		auto Q = _graph->tensor(
-			fe::graph::Tensor_attributes()
-				.set_name("Q")
-				.set_uid(Q_UID)
-				.set_dim({1, query_heads, sequence_length, query_dimension})
+			const std::int64_t sequence_length =
+				static_cast<std::int64_t>(key.seqlen);
+			const std::int64_t total_length =
+				static_cast<std::int64_t>(key.total_len);
+			const std::int64_t query_heads =
+				static_cast<std::int64_t>(key.nhead);
+			const std::int64_t kv_heads =
+				static_cast<std::int64_t>(key.nkvhead);
+			const std::int64_t query_dimension =
+				static_cast<std::int64_t>(key.d);
+			const std::int64_t value_dimension =
+				static_cast<std::int64_t>(key.dv);
+
+			// cuDNN descriptors use logical BHSD dimensions. Custom strides map
+			// them directly onto LLAISYS's contiguous [S, H, D] memory, so no
+			// transpose or temporary layout conversion is needed.
+			auto Q = _graph->tensor(
+				fe::graph::Tensor_attributes()
+					.set_name("Q")
+					.set_uid(Q_UID)
+					.set_dim({1, query_heads, sequence_length, query_dimension})
+					.set_stride({
+						sequence_length * query_heads * query_dimension,
+						query_dimension,
+						query_heads * query_dimension,
+						1,
+					})
+			);
+
+			auto K = _graph->tensor(
+				fe::graph::Tensor_attributes()
+					.set_name("K")
+					.set_uid(K_UID)
+					.set_dim({1, kv_heads, total_length, query_dimension})
+					.set_stride({
+						total_length * kv_heads * query_dimension,
+						query_dimension,
+						kv_heads * query_dimension,
+						1,
+					})
+			);
+
+			auto V = _graph->tensor(
+				fe::graph::Tensor_attributes()
+					.set_name("V")
+					.set_uid(V_UID)
+					.set_dim({1, kv_heads, total_length, value_dimension})
+					.set_stride({
+						total_length * kv_heads * value_dimension,
+						value_dimension,
+						kv_heads * value_dimension,
+						1,
+					})
+			);
+
+			float scale = 0.0F;
+			const std::uint32_t bits = key.scale_bits;
+			std::memcpy(&scale, &bits, sizeof(scale));
+
+			auto options = fe::graph::SDPA_attributes()
+				.set_name("llaisys_self_attention")
+				.set_generate_stats(false)
+				.set_attn_scale(scale)
+				.set_diagonal_alignment(fe::DiagonalAlignment_t::BOTTOM_RIGHT)
+				.set_diagonal_band_right_bound(0);
+
+			auto [O, Stats] = _graph->sdpa(Q, K, V, options);
+			(void)Stats;
+
+			O->set_output(true)
+				.set_uid(O_UID)
+				.set_dim({1, query_heads, sequence_length, value_dimension})
 				.set_stride({
-					sequence_length * query_heads * query_dimension,
-					query_dimension,
-					query_heads * query_dimension,
-					1,
-				})
-		);
-
-		auto K = _graph->tensor(
-			fe::graph::Tensor_attributes()
-				.set_name("K")
-				.set_uid(K_UID)
-				.set_dim({1, kv_heads, total_length, query_dimension})
-				.set_stride({
-					total_length * kv_heads * query_dimension,
-					query_dimension,
-					kv_heads * query_dimension,
-					1,
-				})
-		);
-
-		auto V = _graph->tensor(
-			fe::graph::Tensor_attributes()
-				.set_name("V")
-				.set_uid(V_UID)
-				.set_dim({1, kv_heads, total_length, value_dimension})
-				.set_stride({
-					total_length * kv_heads * value_dimension,
+					sequence_length * query_heads * value_dimension,
 					value_dimension,
-					kv_heads * value_dimension,
+					query_heads * value_dimension,
 					1,
-				})
-		);
+				});
 
-		float scale = 0.0F;
-		const std::uint32_t bits = key.scale_bits;
-		std::memcpy(&scale, &bits, sizeof(scale));
+			const auto build_error =
+				_graph->build(_handle, {fe::HeurMode_t::A});
 
-		auto options = fe::graph::SDPA_attributes()
-			.set_name("llaisys_self_attention")
-			.set_generate_stats(false)
-			.set_attn_scale(scale)
-			.set_diagonal_alignment(fe::DiagonalAlignment_t::BOTTOM_RIGHT)
-			.set_diagonal_band_right_bound(0);
+			if (!build_error.is_good()) {
+				throw std::runtime_error(
+					"SelfAttention: cuDNN SDPA graph build failed."
+				);
+			}
 
-		auto [O, Stats] = _graph->sdpa(Q, K, V, options);
-		(void)Stats;
+			std::int64_t workspace_size = 0;
+			const auto workspace_error =
+				_graph->get_workspace_size(workspace_size);
 
-		O->set_output(true)
-			.set_uid(O_UID)
-			.set_dim({1, query_heads, sequence_length, value_dimension})
-			.set_stride({
-				sequence_length * query_heads * value_dimension,
-				value_dimension,
-				query_heads * value_dimension,
-				1,
-			});
+			if (!workspace_error.is_good() || workspace_size < 0) {
+				throw std::runtime_error(
+					"SelfAttention: cuDNN SDPA workspace query failed."
+				);
+			}
 
-		const auto build_error =
-			_graph->build(_handle, {fe::HeurMode_t::A});
+			_workspace_size = static_cast<std::size_t>(workspace_size);
 
-		if (!build_error.is_good()) {
-			throw std::runtime_error(
-				"SelfAttention: cuDNN SDPA graph build failed."
-			);
-		}
-
-		std::int64_t workspace_size = 0;
-		const auto workspace_error =
-			_graph->get_workspace_size(workspace_size);
-
-		if (!workspace_error.is_good() || workspace_size < 0) {
-			throw std::runtime_error(
-				"SelfAttention: cuDNN SDPA workspace query failed."
-			);
-		}
-
-		_workspace_size = static_cast<std::size_t>(workspace_size);
-
-		if (_workspace_size > 0) {
-			CUDA_CHECK(cudaMalloc(&_workspace, _workspace_size));
+			if (_workspace_size > 0) {
+				CUDA_CHECK(cudaMalloc(&_workspace, _workspace_size));
+			}
+		} catch (...) {
+			// A throwing constructor does not run ~CudnnGraphEntry(). Release
+			// partially created CUDA/cuDNN resources before propagating the
+			// failure to the bounded rejected-graph cache.
+			release_resources_noexcept();
+			throw;
 		}
 	}
 
@@ -692,16 +719,7 @@ public:
 		// cuDNN handles and CUDA allocations belong to the device that
 		// was current when the graph entry was created.
 		(void)cudaSetDevice(_device_id);
-
-		if (_workspace != nullptr) {
-			(void)cudaFree(_workspace);
-			_workspace = nullptr;
-		}
-
-		if (_handle != nullptr) {
-			(void)cudnnDestroy(_handle);
-			_handle = nullptr;
-		}
+		release_resources_noexcept();
 
 		if (
 			get_device_status == cudaSuccess
@@ -752,6 +770,18 @@ public:
 	}
 
 private:
+	void release_resources_noexcept() noexcept {
+		if (_workspace != nullptr) {
+			(void)cudaFree(_workspace);
+			_workspace = nullptr;
+		}
+
+		if (_handle != nullptr) {
+			(void)cudnnDestroy(_handle);
+			_handle = nullptr;
+		}
+	}
+
 	int _device_id{-1};
 	cudnnHandle_t _handle{nullptr};
 	std::shared_ptr<fe::graph::Graph> _graph;
@@ -759,16 +789,147 @@ private:
 	std::size_t _workspace_size{0};
 };
 
-thread_local std::unordered_map<
-	CudnnGraphKey,
-	std::unique_ptr<CudnnGraphEntry>,
-	CudnnGraphKeyHash
-> cudnn_graph_cache;
+class CudnnGraphCache final {
+public:
+	CudnnGraphEntry *find(const CudnnGraphKey &key) {
+		auto iterator = _index.find(key);
 
-thread_local std::unordered_set<
-	CudnnGraphKey,
-	CudnnGraphKeyHash
-> rejected_cudnn_graphs;
+		if (iterator == _index.end()) {
+			return nullptr;
+		}
+
+		// Move the most recently used graph to the front. std::list::splice
+		// preserves iterators, so the unordered_map index remains valid.
+		_entries.splice(
+			_entries.begin(),
+			_entries,
+			iterator->second
+		);
+
+		return iterator->second->entry.get();
+	}
+
+	void insert(
+		const CudnnGraphKey &key,
+		std::unique_ptr<CudnnGraphEntry> entry
+	) {
+		auto existing = _index.find(key);
+
+		if (existing != _index.end()) {
+			existing->second->entry = std::move(entry);
+			_entries.splice(
+				_entries.begin(),
+				_entries,
+				existing->second
+			);
+			return;
+		}
+
+		_entries.push_front(Node{key, std::move(entry)});
+
+		try {
+			_index.emplace(
+				_entries.front().key,
+				_entries.begin()
+			);
+		} catch (...) {
+			// Preserve the previous cache contents if index allocation fails.
+			_entries.pop_front();
+			throw;
+		}
+
+		while (_entries.size() > CUDNN_GRAPH_CACHE_CAPACITY_PER_DEVICE) {
+			_index.erase(_entries.back().key);
+			_entries.pop_back();
+		}
+	}
+
+private:
+	struct Node {
+		CudnnGraphKey key;
+		std::unique_ptr<CudnnGraphEntry> entry;
+	};
+
+	using EntryList = std::list<Node>;
+
+	EntryList _entries;
+	std::unordered_map<
+		CudnnGraphKey,
+		EntryList::iterator,
+		CudnnGraphKeyHash
+	> _index;
+};
+
+class RejectedCudnnGraphCache final {
+public:
+	bool contains(const CudnnGraphKey &key) {
+		auto iterator = _index.find(key);
+
+		if (iterator == _index.end()) {
+			return false;
+		}
+
+		_entries.splice(
+			_entries.begin(),
+			_entries,
+			iterator->second
+		);
+		return true;
+	}
+
+	void insert(const CudnnGraphKey &key) {
+		auto existing = _index.find(key);
+
+		if (existing != _index.end()) {
+			_entries.splice(
+				_entries.begin(),
+				_entries,
+				existing->second
+			);
+			return;
+		}
+
+		_entries.push_front(key);
+
+		try {
+			_index.emplace(
+				_entries.front(),
+				_entries.begin()
+			);
+		} catch (...) {
+			_entries.pop_front();
+			throw;
+		}
+
+		while (
+			_entries.size()
+				> CUDNN_REJECTED_CACHE_CAPACITY_PER_DEVICE
+		) {
+			_index.erase(_entries.back());
+			_entries.pop_back();
+		}
+	}
+
+private:
+	using EntryList = std::list<CudnnGraphKey>;
+
+	EntryList _entries;
+	std::unordered_map<
+		CudnnGraphKey,
+		EntryList::iterator,
+		CudnnGraphKeyHash
+	> _index;
+};
+
+struct CudnnDeviceCache {
+	CudnnGraphCache graphs;
+	RejectedCudnnGraphCache rejected;
+};
+
+// The outer map is naturally bounded by the number of CUDA devices used by
+// the current host thread. Each device cache independently enforces its LRU
+// capacities so activity on one GPU cannot evict graphs belonging to another.
+thread_local std::unordered_map<int, CudnnDeviceCache> cudnn_device_caches;
 
 bool cudnn_supports(
 	llaisysDataType_t type,
@@ -854,36 +1015,39 @@ bool try_cudnn(
 		float_bits(scale),
 	};
 
-	if (rejected_cudnn_graphs.find(key) != rejected_cudnn_graphs.end()) {
+	auto &device_cache = cudnn_device_caches[device];
+
+	if (device_cache.rejected.contains(key)) {
 		return false;
 	}
 
-	auto iterator = cudnn_graph_cache.find(key);
+	CudnnGraphEntry *entry = device_cache.graphs.find(key);
 
-	if (iterator == cudnn_graph_cache.end()) {
+	if (entry == nullptr) {
+		std::unique_ptr<CudnnGraphEntry> new_entry;
+
 		try {
-			auto entry =
-				std::make_unique<CudnnGraphEntry>(key);
-
-			iterator = cudnn_graph_cache
-				.emplace(
-					key,
-					std::move(entry)
-				)
-				.first;
+			new_entry = std::make_unique<CudnnGraphEntry>(key);
 		} catch (...) {
 			// A shape unsupported by the installed cuDNN version should
-			// use the fused CUDA fallback on later calls as well.
-			cudnn_graph_cache.erase(key);
-			rejected_cudnn_graphs.insert(key);
+			// use the fused CUDA fallback on later calls as well. The
+			// rejected cache is itself bounded, so one-off shapes cannot
+			// grow thread-local state indefinitely.
+			device_cache.rejected.insert(key);
 			return false;
 		}
+
+		entry = new_entry.get();
+		device_cache.graphs.insert(
+			key,
+			std::move(new_entry)
+		);
 	}
 
 	// Do not silently fall back after an execution failure. cuDNN may
 	// already have enqueued work on the stream, and hiding the error can
 	// produce an unsafe second write to the output.
-	iterator->second->execute(
+	entry->execute(
 		attn_val,
 		q,
 		k,

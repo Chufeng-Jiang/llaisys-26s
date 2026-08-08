@@ -15,6 +15,9 @@
 
 namespace {
 
+inline constexpr std::size_t LINEAR_OPENMP_MIN_ROWS = 8;
+inline constexpr std::size_t LINEAR_OPENMP_MIN_OUTPUT_FEATURES = 256;
+
 void initialize_output(
 	float *out,
 	const float *bias,
@@ -34,8 +37,8 @@ void initialize_output(
 	}
 
 	const bool use_openmp =
-		row_count >= 8
-		&& output_features >= 256;
+		row_count >= LINEAR_OPENMP_MIN_ROWS
+		&& output_features >= LINEAR_OPENMP_MIN_OUTPUT_FEATURES;
 
 #pragma omp parallel for if(use_openmp) schedule(static)
 	for (std::size_t row = 0; row < row_count; ++row) {
