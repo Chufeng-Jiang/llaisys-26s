@@ -41,7 +41,7 @@ __C {
     __export const LlaisysRuntimeAPI *llaisysGetRuntimeAPI(llaisysDeviceType_t);
 
     // Llaisys API for switching device context
-    __export void llaisysSetContextRuntime(llaisysDeviceType_t, int);
+    __export int llaisysSetContextRuntime(llaisysDeviceType_t device_type, int device_id);
 }
 
 #endif // LLAISYS_RUNTIME_H

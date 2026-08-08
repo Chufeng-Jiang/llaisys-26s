@@ -39,13 +39,13 @@ __C {
     __export int tensorGetDeviceId(
         llaisysTensor_t tensor);
 
-    __export void tensorDebug(
+    __export int tensorDebug(
         llaisysTensor_t tensor);
 
     __export uint8_t tensorIsContiguous(
         llaisysTensor_t tensor);
 
-    __export void tensorLoad(
+    __export int tensorLoad(
         llaisysTensor_t tensor,
         const void *data);
 

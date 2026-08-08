@@ -1,36 +1,112 @@
 from .tensor import llaisysTensor_t
-from ctypes import c_float
+
+from ctypes import c_float, c_int
+
 
 def load_ops(lib):
-    lib.llaisysAdd.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysAdd.restype = None
+	def check_status(
+		result,
+		func,
+		arguments,
+	):
+		if result == 0:
+			return result
 
-    lib.llaisysArgmax.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysArgmax.restype = None
+		message = lib.llaisysGetLastError()
 
-    lib.llaisysEmbedding.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysEmbedding.restype = None
+		if message:
+			raise RuntimeError(
+				message.decode(
+					"utf-8",
+					errors="replace",
+				)
+			)
 
-    lib.llaisysLinear.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysLinear.restype = None
+		raise RuntimeError(
+			"Unknown LLAISYS error"
+		)
 
-    lib.llaisysRearrange.argtypes = [llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysRearrange.restype = None
+	# Add
+	lib.llaisysAdd.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysAdd.restype = c_int
+	lib.llaisysAdd.errcheck = check_status
 
-    lib.llaisysRmsNorm.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t, c_float]
-    lib.llaisysRmsNorm.restype = None
+	# Argmax
+	lib.llaisysArgmax.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysArgmax.restype = c_int
+	lib.llaisysArgmax.errcheck = check_status
 
-    lib.llaisysROPE.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t, c_float]
-    lib.llaisysROPE.restype = None
+	# Embedding
+	lib.llaisysEmbedding.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysEmbedding.restype = c_int
+	lib.llaisysEmbedding.errcheck = check_status
 
-    lib.llaisysSelfAttention.argtypes = [
-        llaisysTensor_t,  # attn_val
-        llaisysTensor_t,  # q
-        llaisysTensor_t,  # k
-        llaisysTensor_t,  # v
-        c_float    # scale
-    ]
-    lib.llaisysSelfAttention.restype = None
+	# Linear
+	lib.llaisysLinear.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysLinear.restype = c_int
+	lib.llaisysLinear.errcheck = check_status
 
-    lib.llaisysSwiGLU.argtypes = [llaisysTensor_t, llaisysTensor_t, llaisysTensor_t]
-    lib.llaisysSwiGLU.restype = None
+	# Rearrange
+	lib.llaisysRearrange.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysRearrange.restype = c_int
+	lib.llaisysRearrange.errcheck = check_status
+
+	# RMSNorm
+	lib.llaisysRmsNorm.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+		c_float,
+	]
+	lib.llaisysRmsNorm.restype = c_int
+	lib.llaisysRmsNorm.errcheck = check_status
+
+	# RoPE
+	lib.llaisysROPE.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+		c_float,
+	]
+	lib.llaisysROPE.restype = c_int
+	lib.llaisysROPE.errcheck = check_status
+
+	# Self Attention
+	lib.llaisysSelfAttention.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+		c_float,
+	]
+	lib.llaisysSelfAttention.restype = c_int
+	lib.llaisysSelfAttention.errcheck = check_status
+
+	# SwiGLU
+	lib.llaisysSwiGLU.argtypes = [
+		llaisysTensor_t,
+		llaisysTensor_t,
+		llaisysTensor_t,
+	]
+	lib.llaisysSwiGLU.restype = c_int
+	lib.llaisysSwiGLU.errcheck = check_status

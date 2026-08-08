@@ -187,7 +187,10 @@ target("test-context-device-switch")
     add_deps("llaisys-utils")
 
     -- Provides llaisysGetRuntimeAPI().
-    add_files("src/llaisys/runtime.cc")
+    add_files(
+        "src/llaisys/runtime.cc",
+        "src/llaisys/error.cc"
+    )
 
     -- Test source.
     add_files("tmp/test_context_device_switch.cpp")
@@ -239,4 +242,64 @@ target("test-context-device-switch")
             )
         end)
     end
+    -- This is an internal regression test.
+    -- Do not install it into /usr/local/bin.
+    on_install(function (target)
+    end)
+target_end()
+
+
+target("test-c-api-error")
+	set_kind("binary")
+
+	set_languages("cxx17")
+	set_warnings("all", "error")
+
+	add_includedirs("include")
+	add_includedirs("src")
+
+	add_deps("llaisys-core")
+	add_deps("llaisys-device")
+	add_deps("llaisys-device-cpu")
+	add_deps("llaisys-utils")
+
+	add_files(
+		"src/llaisys/runtime.cc",
+		"src/llaisys/error.cc",
+		"tmp/test_c_api_error.cpp"
+	)
+
+	if has_config("nv-gpu") then
+		add_deps("llaisys-device-nvidia")
+		add_defines("ENABLE_NVIDIA_API")
+
+		add_syslinks(
+			"cublas",
+			"cudart"
+		)
+
+		on_config(function (target)
+			local cuda_root = get_config("cuda")
+
+			if cuda_root then
+				target:add(
+					"includedirs",
+					path.join(cuda_root, "include")
+				)
+
+				target:add(
+					"linkdirs",
+					path.join(cuda_root, "lib64")
+				)
+
+				target:add(
+					"rpathdirs",
+					path.join(cuda_root, "lib64")
+				)
+			end
+		end)
+	end
+
+	on_install(function (target)
+	end)
 target_end()

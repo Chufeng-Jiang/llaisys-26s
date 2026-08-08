@@ -18,6 +18,8 @@ from .qwen2 import LlaisysQwen2Meta
 from .qwen2 import LlaisysQwen2Weights
 from .qwen2 import LlaisysQwen2Model
 from .qwen2 import llaisysQwen2Model_t
+from .error import load_error
+
 
 def load_shared_library():
     lib_dir = Path(__file__).parent
@@ -40,24 +42,25 @@ def load_shared_library():
 
 
 LIB_LLAISYS = load_shared_library()
+load_error(LIB_LLAISYS)
 load_runtime(LIB_LLAISYS)
 load_tensor(LIB_LLAISYS)
 load_ops(LIB_LLAISYS)
 load_qwen2(LIB_LLAISYS)
 
 __all__ = [
-	"LIB_LLAISYS",
-	"LlaisysRuntimeAPI",
-	"llaisysStream_t",
-	"llaisysTensor_t",
-	"llaisysDataType_t",
-	"DataType",
-	"llaisysDeviceType_t",
-	"DeviceType",
-	"llaisysMemcpyKind_t",
-	"MemcpyKind",
-	"LlaisysQwen2Meta",
-	"LlaisysQwen2Weights",
-	"LlaisysQwen2Model",
-	"llaisysQwen2Model_t",
+    "LIB_LLAISYS",
+    "LlaisysRuntimeAPI",
+    "llaisysStream_t",
+    "llaisysTensor_t",
+    "llaisysDataType_t",
+    "DataType",
+    "llaisysDeviceType_t",
+    "DeviceType",
+    "llaisysMemcpyKind_t",
+    "MemcpyKind",
+    "LlaisysQwen2Meta",
+    "LlaisysQwen2Weights",
+    "LlaisysQwen2Model",
+    "llaisysQwen2Model_t",
 ]
