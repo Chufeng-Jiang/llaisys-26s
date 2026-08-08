@@ -31,11 +31,11 @@ def load_tensor(lib):
 	# ============================================================
 
 	lib.tensorCreate.argtypes = [
-		POINTER(c_size_t),      # shape
-		c_size_t,              # ndim
-		llaisysDataType_t,     # dtype
-		llaisysDeviceType_t,   # device_type
-		c_int,                 # device_id
+		POINTER(c_size_t),
+		c_size_t,
+		llaisysDataType_t,
+		llaisysDeviceType_t,
+		c_int,
 	]
 
 	lib.tensorCreate.restype = llaisysTensor_t
@@ -50,7 +50,8 @@ def load_tensor(lib):
 		llaisysTensor_t,
 	]
 
-	lib.tensorDestroy.restype = None
+	lib.tensorDestroy.restype = c_int
+	lib.tensorDestroy.errcheck = check_status
 
 
 	# ============================================================
@@ -59,9 +60,11 @@ def load_tensor(lib):
 
 	lib.tensorGetData.argtypes = [
 		llaisysTensor_t,
+		POINTER(c_void_p),
 	]
 
-	lib.tensorGetData.restype = c_void_p
+	lib.tensorGetData.restype = c_int
+	lib.tensorGetData.errcheck = check_status
 
 
 	# ============================================================
@@ -70,9 +73,11 @@ def load_tensor(lib):
 
 	lib.tensorGetNdim.argtypes = [
 		llaisysTensor_t,
+		POINTER(c_size_t),
 	]
 
-	lib.tensorGetNdim.restype = c_size_t
+	lib.tensorGetNdim.restype = c_int
+	lib.tensorGetNdim.errcheck = check_status
 
 
 	# ============================================================
@@ -84,7 +89,8 @@ def load_tensor(lib):
 		POINTER(c_size_t),
 	]
 
-	lib.tensorGetShape.restype = None
+	lib.tensorGetShape.restype = c_int
+	lib.tensorGetShape.errcheck = check_status
 
 
 	# ============================================================
@@ -96,7 +102,8 @@ def load_tensor(lib):
 		POINTER(c_ssize_t),
 	]
 
-	lib.tensorGetStrides.restype = None
+	lib.tensorGetStrides.restype = c_int
+	lib.tensorGetStrides.errcheck = check_status
 
 
 	# ============================================================
@@ -105,9 +112,11 @@ def load_tensor(lib):
 
 	lib.tensorGetDataType.argtypes = [
 		llaisysTensor_t,
+		POINTER(llaisysDataType_t),
 	]
 
-	lib.tensorGetDataType.restype = llaisysDataType_t
+	lib.tensorGetDataType.restype = c_int
+	lib.tensorGetDataType.errcheck = check_status
 
 
 	# ============================================================
@@ -116,9 +125,11 @@ def load_tensor(lib):
 
 	lib.tensorGetDeviceType.argtypes = [
 		llaisysTensor_t,
+		POINTER(llaisysDeviceType_t),
 	]
 
-	lib.tensorGetDeviceType.restype = llaisysDeviceType_t
+	lib.tensorGetDeviceType.restype = c_int
+	lib.tensorGetDeviceType.errcheck = check_status
 
 
 	# ============================================================
@@ -127,9 +138,11 @@ def load_tensor(lib):
 
 	lib.tensorGetDeviceId.argtypes = [
 		llaisysTensor_t,
+		POINTER(c_int),
 	]
 
 	lib.tensorGetDeviceId.restype = c_int
+	lib.tensorGetDeviceId.errcheck = check_status
 
 
 	# ============================================================
@@ -140,8 +153,6 @@ def load_tensor(lib):
 		llaisysTensor_t,
 	]
 
-	# If tensorDebug has been changed to return int in C++,
-	# use c_int + status checker.
 	lib.tensorDebug.restype = c_int
 	lib.tensorDebug.errcheck = check_status
 
@@ -152,9 +163,11 @@ def load_tensor(lib):
 
 	lib.tensorIsContiguous.argtypes = [
 		llaisysTensor_t,
+		POINTER(c_uint8),
 	]
 
-	lib.tensorIsContiguous.restype = c_uint8
+	lib.tensorIsContiguous.restype = c_int
+	lib.tensorIsContiguous.errcheck = check_status
 
 
 	# ============================================================
@@ -203,9 +216,9 @@ def load_tensor(lib):
 
 	lib.tensorSlice.argtypes = [
 		llaisysTensor_t,
-		c_size_t,   # dim
-		c_size_t,   # start
-		c_size_t,   # end
+		c_size_t,
+		c_size_t,
+		c_size_t,
 	]
 
 	lib.tensorSlice.restype = llaisysTensor_t
