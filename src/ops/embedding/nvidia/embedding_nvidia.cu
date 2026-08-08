@@ -3,6 +3,7 @@
 #include <limits>
 
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 #include "embedding_nvidia.cuh"
 
@@ -192,31 +193,22 @@ void embedding(std::byte *out, const std::byte *index, const std::byte *weight,
                std::size_t vocabulary_size, llaisysStream_t stream) {
     const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
 
-    switch (type) {
-    case LLAISYS_DTYPE_F32:
-        return launch_embedding<float>(
-            reinterpret_cast<float *>(out),
-            reinterpret_cast<const std::int64_t *>(index),
-            reinterpret_cast<const float *>(weight), numel, len, vocabulary_size,
-            cuda_stream);
+    return llaisys::device::nvidia::dispatch_cuda_dtype(
+        type,
+        [&](auto tag) {
+            using T = typename decltype(tag)::type;
 
-    case LLAISYS_DTYPE_F16:
-        return launch_embedding<half>(
-            reinterpret_cast<half *>(out),
-            reinterpret_cast<const std::int64_t *>(index),
-            reinterpret_cast<const half *>(weight), numel, len, vocabulary_size,
-            cuda_stream);
-
-    case LLAISYS_DTYPE_BF16:
-        return launch_embedding<__nv_bfloat16>(
-            reinterpret_cast<__nv_bfloat16 *>(out),
-            reinterpret_cast<const std::int64_t *>(index),
-            reinterpret_cast<const __nv_bfloat16 *>(weight), numel, len,
-            vocabulary_size, cuda_stream);
-
-    default:
-        EXCEPTION_UNSUPPORTED_DATATYPE(type);
-    }
+            return launch_embedding<T>(
+                reinterpret_cast<T *>(out),
+                reinterpret_cast<const std::int64_t *>(index),
+                reinterpret_cast<const T *>(weight),
+                numel,
+                len,
+                vocabulary_size,
+                cuda_stream
+            );
+        }
+    );
 }
 
 } // namespace llaisys::ops::nvidia

@@ -2,6 +2,7 @@
 #include <type_traits>
 
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 #include "add_nvidia.cuh"
 
@@ -207,26 +208,20 @@ void add(std::byte *c, const std::byte *a, const std::byte *b, llaisysDataType_t
 
     const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
 
-    switch (type) {
-    case LLAISYS_DTYPE_F32:
-        return launch_add_kernel<float>(
-            reinterpret_cast<float *>(c), reinterpret_cast<const float *>(a),
-            reinterpret_cast<const float *>(b), numel, cuda_stream);
+    return llaisys::device::nvidia::dispatch_cuda_dtype(
+        type,
+        [&](auto tag) {
+            using T = typename decltype(tag)::type;
 
-    case LLAISYS_DTYPE_F16:
-        return launch_add_kernel<half>(
-            reinterpret_cast<half *>(c), reinterpret_cast<const half *>(a),
-            reinterpret_cast<const half *>(b), numel, cuda_stream);
-
-    case LLAISYS_DTYPE_BF16:
-        return launch_add_kernel<__nv_bfloat16>(
-            reinterpret_cast<__nv_bfloat16 *>(c),
-            reinterpret_cast<const __nv_bfloat16 *>(a),
-            reinterpret_cast<const __nv_bfloat16 *>(b), numel, cuda_stream);
-
-    default:
-        EXCEPTION_UNSUPPORTED_DATATYPE(type);
-    }
+            return launch_add_kernel<T>(
+                reinterpret_cast<T *>(c),
+                reinterpret_cast<const T *>(a),
+                reinterpret_cast<const T *>(b),
+                numel,
+                cuda_stream
+            );
+        }
+    );
 }
 
 } // namespace llaisys::ops::nvidia

@@ -2,6 +2,7 @@
 
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../device/nvidia/nvidia_resource.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 
 #include <cublas_v2.h>
@@ -103,7 +104,6 @@ void launch_linear(
 	const T *in,
 	const T *weight,
 	const T *bias,
-	cudaDataType_t data_type,
 	std::size_t row_count,
 	std::size_t output_features,
 	std::size_t input_features,
@@ -129,6 +129,7 @@ void launch_linear(
 			input_features,
 			"Linear: weight element count overflows size_t."
 		);
+
 
 	CHECK_ARGUMENT(
 		output_elements == 0 || out != nullptr,
@@ -199,6 +200,9 @@ void launch_linear(
 	}
 
 	const float alpha = 1.0F;
+			
+	constexpr cudaDataType_t data_type =
+		llaisys::device::nvidia::CudaTypeTraits<T>::data_type;
 
 	cublasHandle_t handle =
 		llaisys::device::nvidia::get_cublas_handle(stream);
@@ -257,49 +261,23 @@ void linear(
 	std::size_t ncol_in,
 	llaisysStream_t stream
 ) {
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return launch_linear<float>(
-			reinterpret_cast<float *>(out),
-			reinterpret_cast<const float *>(in),
-			reinterpret_cast<const float *>(weight),
-			reinterpret_cast<const float *>(bias),
-			CUDA_R_32F,
-			nrow,
-			ncol_out,
-			ncol_in,
-			stream
-		);
+	return llaisys::device::nvidia::dispatch_cuda_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return launch_linear<half>(
-			reinterpret_cast<half *>(out),
-			reinterpret_cast<const half *>(in),
-			reinterpret_cast<const half *>(weight),
-			reinterpret_cast<const half *>(bias),
-			CUDA_R_16F,
-			nrow,
-			ncol_out,
-			ncol_in,
-			stream
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return launch_linear<__nv_bfloat16>(
-			reinterpret_cast<__nv_bfloat16 *>(out),
-			reinterpret_cast<const __nv_bfloat16 *>(in),
-			reinterpret_cast<const __nv_bfloat16 *>(weight),
-			reinterpret_cast<const __nv_bfloat16 *>(bias),
-			CUDA_R_16BF,
-			nrow,
-			ncol_out,
-			ncol_in,
-			stream
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(type);
-	}
+			return launch_linear<T>(
+				reinterpret_cast<T *>(out),
+				reinterpret_cast<const T *>(in),
+				reinterpret_cast<const T *>(weight),
+				reinterpret_cast<const T *>(bias),
+				nrow,
+				ncol_out,
+				ncol_in,
+				stream
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::nvidia

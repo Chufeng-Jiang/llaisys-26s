@@ -1,6 +1,7 @@
 #include "self_attention_cpu.hpp"
 
 #include "../../../device/cpu/cpu_common.hpp"
+#include "../../../device/cpu/cpu_dtype.hpp"
 #include "../../../utils.hpp"
 
 #include <algorithm>
@@ -632,55 +633,26 @@ void self_attention(
 	std::size_t nkvhead,
 	std::size_t d
 ) {
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return self_attention_impl(
-			reinterpret_cast<float *>(attn_val),
-			reinterpret_cast<const float *>(q),
-			reinterpret_cast<const float *>(k),
-			reinterpret_cast<const float *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d
-		);
+	return llaisys::device::cpu::dispatch_cpu_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return self_attention_impl(
-			reinterpret_cast<llaisys::fp16_t *>(attn_val),
-			reinterpret_cast<const llaisys::fp16_t *>(q),
-			reinterpret_cast<const llaisys::fp16_t *>(k),
-			reinterpret_cast<const llaisys::fp16_t *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return self_attention_impl(
-			reinterpret_cast<llaisys::bf16_t *>(attn_val),
-			reinterpret_cast<const llaisys::bf16_t *>(q),
-			reinterpret_cast<const llaisys::bf16_t *>(k),
-			reinterpret_cast<const llaisys::bf16_t *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(type);
-	}
+			return self_attention_impl<T>(
+				reinterpret_cast<T *>(attn_val),
+				reinterpret_cast<const T *>(q),
+				reinterpret_cast<const T *>(k),
+				reinterpret_cast<const T *>(v),
+				scale,
+				seqlen,
+				nhead,
+				dv,
+				total_len,
+				nkvhead,
+				d
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::cpu

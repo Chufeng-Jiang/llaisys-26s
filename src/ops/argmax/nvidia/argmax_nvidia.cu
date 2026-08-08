@@ -3,6 +3,7 @@
 #include <limits>
 
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 #include "argmax_nvidia.cuh"
 
@@ -466,31 +467,21 @@ void argmax(std::byte *max_idx, std::byte *max_val, const std::byte *vals,
 
     const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
 
-    switch (type) {
-    case LLAISYS_DTYPE_F32:
-        return launch_argmax_kernel<float>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<float *>(max_val),
-            reinterpret_cast<const float *>(vals), numel, packed_workspace,
-            cuda_stream);
+    return llaisys::device::nvidia::dispatch_cuda_dtype(
+        type,
+        [&](auto tag) {
+            using T = typename decltype(tag)::type;
 
-    case LLAISYS_DTYPE_F16:
-        return launch_argmax_kernel<half>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<half *>(max_val),
-            reinterpret_cast<const half *>(vals), numel, packed_workspace,
-            cuda_stream);
-
-    case LLAISYS_DTYPE_BF16:
-        return launch_argmax_kernel<__nv_bfloat16>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<__nv_bfloat16 *>(max_val),
-            reinterpret_cast<const __nv_bfloat16 *>(vals), numel,
-            packed_workspace, cuda_stream);
-
-    default:
-        EXCEPTION_UNSUPPORTED_DATATYPE(type);
-    }
+            return launch_argmax_kernel<T>(
+                reinterpret_cast<std::int64_t *>(max_idx),
+                reinterpret_cast<T *>(max_val),
+                reinterpret_cast<const T *>(vals),
+                numel,
+                packed_workspace,
+                cuda_stream
+            );
+        }
+    );
 }
 
 } // namespace llaisys::ops::nvidia

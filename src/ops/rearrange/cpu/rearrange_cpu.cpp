@@ -1,6 +1,7 @@
 #include "rearrange_cpu.hpp"
 
 #include "../../../device/cpu/cpu_common.hpp"
+#include "../../../device/cpu/cpu_dtype.hpp"
 #include "../../../utils.hpp"
 #include "../layout_utils.hpp"
 #include <algorithm>
@@ -429,45 +430,22 @@ void rearrange(
 	const std::vector<std::size_t> &in_shape,
 	const std::vector<std::ptrdiff_t> &in_strides
 ) {
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return rearrange_typed(
-			reinterpret_cast<float *>(out),
-			reinterpret_cast<const float *>(in),
-			numel,
-			out_shape,
-			out_strides,
-			in_shape,
-			in_strides
-		);
+	return llaisys::device::cpu::dispatch_cpu_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_BF16:
-		return rearrange_typed(
-			reinterpret_cast<llaisys::bf16_t *>(out),
-			reinterpret_cast<const llaisys::bf16_t *>(in),
-			numel,
-			out_shape,
-			out_strides,
-			in_shape,
-			in_strides
-		);
-
-	case LLAISYS_DTYPE_F16:
-		return rearrange_typed(
-			reinterpret_cast<llaisys::fp16_t *>(out),
-			reinterpret_cast<const llaisys::fp16_t *>(in),
-			numel,
-			out_shape,
-			out_strides,
-			in_shape,
-			in_strides
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(
-			type
-		);
-	}
+			return rearrange_typed<T>(
+				reinterpret_cast<T *>(out),
+				reinterpret_cast<const T *>(in),
+				numel,
+				out_shape,
+				out_strides,
+				in_shape,
+				in_strides
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::cpu

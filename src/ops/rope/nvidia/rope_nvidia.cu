@@ -1,6 +1,7 @@
 #include "rope_nvidia.cuh"
 
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 
 #include <algorithm>
@@ -488,48 +489,23 @@ void rope(
 			stream
 		);
 
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return launch_rope<float>(
-			reinterpret_cast<float *>(out),
-			reinterpret_cast<const float *>(in),
-			reinterpret_cast<const std::int64_t *>(pos_ids),
-			theta,
-			seqlen,
-			nhead,
-			d,
-			cuda_stream
-		);
+	return llaisys::device::nvidia::dispatch_cuda_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return launch_rope<half>(
-			reinterpret_cast<half *>(out),
-			reinterpret_cast<const half *>(in),
-			reinterpret_cast<const std::int64_t *>(pos_ids),
-			theta,
-			seqlen,
-			nhead,
-			d,
-			cuda_stream
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return launch_rope<__nv_bfloat16>(
-			reinterpret_cast<__nv_bfloat16 *>(out),
-			reinterpret_cast<const __nv_bfloat16 *>(in),
-			reinterpret_cast<const std::int64_t *>(pos_ids),
-			theta,
-			seqlen,
-			nhead,
-			d,
-			cuda_stream
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(
-			type
-		);
-	}
+			return launch_rope<T>(
+				reinterpret_cast<T *>(out),
+				reinterpret_cast<const T *>(in),
+				reinterpret_cast<const std::int64_t *>(pos_ids),
+				theta,
+				seqlen,
+				nhead,
+				d,
+				cuda_stream
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::nvidia

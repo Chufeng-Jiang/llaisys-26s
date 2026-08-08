@@ -4,6 +4,7 @@
 #include "vecmul.hpp"
 
 #include "../../../device/cpu/cpu_common.hpp"
+#include "../../../device/cpu/cpu_dtype.hpp"
 #include "../../../utils.hpp"
 
 #include <algorithm>
@@ -297,43 +298,22 @@ void linear(
 	std::size_t ncol_out,
 	std::size_t ncol_in
 ) {
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return linear_impl<float>(
-			reinterpret_cast<float *>(out),
-			reinterpret_cast<const float *>(in),
-			reinterpret_cast<const float *>(weight),
-			reinterpret_cast<const float *>(bias),
-			nrow,
-			ncol_out,
-			ncol_in
-		);
+	return llaisys::device::cpu::dispatch_cpu_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return linear_impl<llaisys::fp16_t>(
-			reinterpret_cast<llaisys::fp16_t *>(out),
-			reinterpret_cast<const llaisys::fp16_t *>(in),
-			reinterpret_cast<const llaisys::fp16_t *>(weight),
-			reinterpret_cast<const llaisys::fp16_t *>(bias),
-			nrow,
-			ncol_out,
-			ncol_in
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return linear_impl<llaisys::bf16_t>(
-			reinterpret_cast<llaisys::bf16_t *>(out),
-			reinterpret_cast<const llaisys::bf16_t *>(in),
-			reinterpret_cast<const llaisys::bf16_t *>(weight),
-			reinterpret_cast<const llaisys::bf16_t *>(bias),
-			nrow,
-			ncol_out,
-			ncol_in
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(type);
-	}
+			return linear_impl<T>(
+				reinterpret_cast<T *>(out),
+				reinterpret_cast<const T *>(in),
+				reinterpret_cast<const T *>(weight),
+				reinterpret_cast<const T *>(bias),
+				nrow,
+				ncol_out,
+				ncol_in
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::cpu

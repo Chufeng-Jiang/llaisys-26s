@@ -1,6 +1,7 @@
 #include "self_attention_nvidia.cuh"
 
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
 
 #include <algorithm>
@@ -1205,58 +1206,27 @@ void self_attention(
 	}
 #endif
 
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return launch_fallback<float>(
-			reinterpret_cast<float *>(attn_val),
-			reinterpret_cast<const float *>(q),
-			reinterpret_cast<const float *>(k),
-			reinterpret_cast<const float *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d,
-			cuda_stream
-		);
+	return llaisys::device::nvidia::dispatch_cuda_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return launch_fallback<half>(
-			reinterpret_cast<half *>(attn_val),
-			reinterpret_cast<const half *>(q),
-			reinterpret_cast<const half *>(k),
-			reinterpret_cast<const half *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d,
-			cuda_stream
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return launch_fallback<__nv_bfloat16>(
-			reinterpret_cast<__nv_bfloat16 *>(attn_val),
-			reinterpret_cast<const __nv_bfloat16 *>(q),
-			reinterpret_cast<const __nv_bfloat16 *>(k),
-			reinterpret_cast<const __nv_bfloat16 *>(v),
-			scale,
-			seqlen,
-			nhead,
-			dv,
-			total_len,
-			nkvhead,
-			d,
-			cuda_stream
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(type);
-	}
+			return launch_fallback<T>(
+				reinterpret_cast<T *>(attn_val),
+				reinterpret_cast<const T *>(q),
+				reinterpret_cast<const T *>(k),
+				reinterpret_cast<const T *>(v),
+				scale,
+				seqlen,
+				nhead,
+				dv,
+				total_len,
+				nkvhead,
+				d,
+				cuda_stream
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::nvidia

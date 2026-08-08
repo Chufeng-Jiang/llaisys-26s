@@ -1,6 +1,7 @@
 #include "swiglu_cpu.hpp"
 
 #include "../../../device/cpu/cpu_common.hpp"
+#include "../../../device/cpu/cpu_dtype.hpp"
 #include "../../../utils.hpp"
 
 #include <cmath>
@@ -119,34 +120,19 @@ void swiglu(
 	llaisysDataType_t type,
 	std::size_t numel
 ) {
-	switch (type) {
-	case LLAISYS_DTYPE_F32:
-		return swiglu_impl<float>(
-			reinterpret_cast<float *>(out),
-			reinterpret_cast<const float *>(gate),
-			reinterpret_cast<const float *>(up),
-			numel
-		);
+	return llaisys::device::cpu::dispatch_cpu_dtype(
+		type,
+		[&](auto tag) {
+			using T = typename decltype(tag)::type;
 
-	case LLAISYS_DTYPE_F16:
-		return swiglu_impl<llaisys::fp16_t>(
-			reinterpret_cast<llaisys::fp16_t *>(out),
-			reinterpret_cast<const llaisys::fp16_t *>(gate),
-			reinterpret_cast<const llaisys::fp16_t *>(up),
-			numel
-		);
-
-	case LLAISYS_DTYPE_BF16:
-		return swiglu_impl<llaisys::bf16_t>(
-			reinterpret_cast<llaisys::bf16_t *>(out),
-			reinterpret_cast<const llaisys::bf16_t *>(gate),
-			reinterpret_cast<const llaisys::bf16_t *>(up),
-			numel
-		);
-
-	default:
-		EXCEPTION_UNSUPPORTED_DATATYPE(type);
-	}
+			return swiglu_impl<T>(
+				reinterpret_cast<T *>(out),
+				reinterpret_cast<const T *>(gate),
+				reinterpret_cast<const T *>(up),
+				numel
+			);
+		}
+	);
 }
 
 } // namespace llaisys::ops::cpu
