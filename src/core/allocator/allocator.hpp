@@ -8,7 +8,7 @@ namespace llaisys::core {
 class MemoryAllocator {
 protected:
     const LlaisysRuntimeAPI *_api;
-    MemoryAllocator(const LlaisysRuntimeAPI *runtime_api) : _api(runtime_api){};
+    MemoryAllocator(const LlaisysRuntimeAPI *runtime_api) : _api(runtime_api) {};
 
 public:
     virtual ~MemoryAllocator() = default;

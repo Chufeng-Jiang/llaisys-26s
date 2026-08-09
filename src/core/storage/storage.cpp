@@ -6,17 +6,11 @@ namespace llaisys::core {
 Storage::Storage(std::byte *memory, size_t size, Runtime &runtime, bool is_host)
     : _memory(memory), _size(size), _runtime(runtime), _is_host(is_host) {}
 
-Storage::~Storage() {
-    _runtime.freeStorage(this);
-}
+Storage::~Storage() { _runtime.freeStorage(this); }
 
-std::byte *Storage::memory() const {
-    return _memory;
-}
+std::byte *Storage::memory() const { return _memory; }
 
-size_t Storage::size() const {
-    return _size;
-}
+size_t Storage::size() const { return _size; }
 
 llaisysDeviceType_t Storage::deviceType() const {
     if (isHost()) {
@@ -34,7 +28,5 @@ int Storage::deviceId() const {
     }
 }
 
-bool Storage::isHost() const {
-    return _is_host;
-}
+bool Storage::isHost() const { return _is_host; }
 } // namespace llaisys::core

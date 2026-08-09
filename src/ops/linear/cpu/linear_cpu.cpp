@@ -20,268 +20,160 @@ inline constexpr std::size_t LINEAR_OPENMP_MIN_ROWS = 8;
 inline constexpr std::size_t LINEAR_OPENMP_MIN_OUTPUT_FEATURES = 256;
 
 void initialize_output(
-	float *out,
-	const float *bias,
-	std::size_t row_count,
-	std::size_t output_features
-) {
-	const std::size_t output_elements =
-		row_count * output_features;
+    float *out, const float *bias, std::size_t row_count, std::size_t output_features) {
+    const std::size_t output_elements = row_count * output_features;
 
-	if (bias == nullptr) {
-		std::fill(
-			out,
-			out + output_elements,
-			0.0F
-		);
-		return;
-	}
+    if (bias == nullptr) {
+        std::fill(out, out + output_elements, 0.0F);
+        return;
+    }
 
-	const bool use_openmp =
-		row_count >= LINEAR_OPENMP_MIN_ROWS
-		&& output_features >= LINEAR_OPENMP_MIN_OUTPUT_FEATURES;
+    const bool use_openmp = row_count >= LINEAR_OPENMP_MIN_ROWS
+                         && output_features >= LINEAR_OPENMP_MIN_OUTPUT_FEATURES;
 
-#pragma omp parallel for if(use_openmp) schedule(static)
-	for (std::size_t row = 0; row < row_count; ++row) {
-		std::memcpy(
-			out + row * output_features,
-			bias,
-			output_features * sizeof(float)
-		);
-	}
+#pragma omp parallel for if (use_openmp) schedule(static)
+    for (std::size_t row = 0; row < row_count; ++row) {
+        std::memcpy(out + row * output_features, bias, output_features * sizeof(float));
+    }
 }
 
 template <typename T>
-void convert_to_float(
-	float *destination,
-	const T *source,
-	std::size_t count
-) {
-	static_assert(
-		std::is_same_v<T, llaisys::fp16_t>
-			|| std::is_same_v<T, llaisys::bf16_t>,
-		"Linear: unsupported conversion source type."
-	);
+void convert_to_float(float *destination, const T *source, std::size_t count) {
+    static_assert(
+        std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>,
+        "Linear: unsupported conversion source type.");
 
-	CHECK_ARGUMENT(
-		count == 0 || destination != nullptr,
-		"Linear: conversion destination pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        count == 0 || destination != nullptr,
+        "Linear: conversion destination pointer must not be null.");
 
-	CHECK_ARGUMENT(
-		count == 0 || source != nullptr,
-		"Linear: conversion source pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        count == 0 || source != nullptr, "Linear: conversion source pointer must not be null.");
 
-	const bool use_openmp =
-		count >= llaisys::device::cpu::OPENMP_THRESHOLD;
+    const bool use_openmp = count >= llaisys::device::cpu::OPENMP_THRESHOLD;
 
-#pragma omp parallel for if(use_openmp) schedule(static)
-	for (std::size_t i = 0; i < count; ++i) {
-		destination[i] =
-			llaisys::utils::cast<float>(source[i]);
-	}
+#pragma omp parallel for if (use_openmp) schedule(static)
+    for (std::size_t i = 0; i < count; ++i) {
+        destination[i] = llaisys::utils::cast<float>(source[i]);
+    }
 }
 
 template <typename T>
-void convert_from_float(
-	T *destination,
-	const float *source,
-	std::size_t count
-) {
-	static_assert(
-		std::is_same_v<T, llaisys::fp16_t>
-			|| std::is_same_v<T, llaisys::bf16_t>,
-		"Linear: unsupported conversion destination type."
-	);
+void convert_from_float(T *destination, const float *source, std::size_t count) {
+    static_assert(
+        std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>,
+        "Linear: unsupported conversion destination type.");
 
-	CHECK_ARGUMENT(
-		count == 0 || destination != nullptr,
-		"Linear: conversion destination pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        count == 0 || destination != nullptr,
+        "Linear: conversion destination pointer must not be null.");
 
-	CHECK_ARGUMENT(
-		count == 0 || source != nullptr,
-		"Linear: conversion source pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        count == 0 || source != nullptr, "Linear: conversion source pointer must not be null.");
 
-	const bool use_openmp =
-		count >= llaisys::device::cpu::OPENMP_THRESHOLD;
+    const bool use_openmp = count >= llaisys::device::cpu::OPENMP_THRESHOLD;
 
-#pragma omp parallel for if(use_openmp) schedule(static)
-	for (std::size_t i = 0; i < count; ++i) {
-		destination[i] =
-			llaisys::utils::cast<T>(source[i]);
-	}
+#pragma omp parallel for if (use_openmp) schedule(static)
+    for (std::size_t i = 0; i < count; ++i) { destination[i] = llaisys::utils::cast<T>(source[i]); }
 }
 
 void linear_float(
-	float *out,
-	const float *in,
-	const float *weight,
-	const float *bias,
-	std::size_t row_count,
-	std::size_t output_features,
-	std::size_t input_features
-) {
-	initialize_output(
-		out,
-		bias,
-		row_count,
-		output_features
-	);
+    float *out,
+    const float *in,
+    const float *weight,
+    const float *bias,
+    std::size_t row_count,
+    std::size_t output_features,
+    std::size_t input_features) {
+    initialize_output(out, bias, row_count, output_features);
 
-	// With K == 0, XW^T contributes zero and the initialized bias/zero
-	// output is already the final result.
-	if (input_features == 0) {
-		return;
-	}
+    // With K == 0, XW^T contributes zero and the initialized bias/zero
+    // output is already the final result.
+    if (input_features == 0) { return; }
 
-	if (row_count == 1) {
-		vecmul(
-			in,
-			weight,
-			out,
-			output_features,
-			input_features
-		);
-		return;
-	}
+    if (row_count == 1) {
+        vecmul(in, weight, out, output_features, input_features);
+        return;
+    }
 
-	matmul(
-		in,
-		weight,
-		out,
-		row_count,
-		output_features,
-		input_features
-	);
+    matmul(in, weight, out, row_count, output_features, input_features);
 }
 
 template <typename T>
 void linear_impl(
-	T *out,
-	const T *in,
-	const T *weight,
-	const T *bias,
-	std::size_t row_count,
-	std::size_t output_features,
-	std::size_t input_features
-) {
-	const std::size_t max_size =
-		std::numeric_limits<std::size_t>::max();
+    T *out,
+    const T *in,
+    const T *weight,
+    const T *bias,
+    std::size_t row_count,
+    std::size_t output_features,
+    std::size_t input_features) {
+    const std::size_t max_size = std::numeric_limits<std::size_t>::max();
 
-	CHECK_ARGUMENT(
-		row_count == 0
-			|| output_features <= max_size / row_count,
-		"Linear: output element count overflows size_t."
-	);
+    CHECK_ARGUMENT(
+        row_count == 0 || output_features <= max_size / row_count,
+        "Linear: output element count overflows size_t.");
 
-	CHECK_ARGUMENT(
-		row_count == 0
-			|| input_features <= max_size / row_count,
-		"Linear: input element count overflows size_t."
-	);
+    CHECK_ARGUMENT(
+        row_count == 0 || input_features <= max_size / row_count,
+        "Linear: input element count overflows size_t.");
 
-	CHECK_ARGUMENT(
-		output_features == 0
-			|| input_features <= max_size / output_features,
-		"Linear: weight element count overflows size_t."
-	);
+    CHECK_ARGUMENT(
+        output_features == 0 || input_features <= max_size / output_features,
+        "Linear: weight element count overflows size_t.");
 
-	const std::size_t output_elements =
-		row_count * output_features;
+    const std::size_t output_elements = row_count * output_features;
 
-	const std::size_t input_elements =
-		row_count * input_features;
+    const std::size_t input_elements = row_count * input_features;
 
-	const std::size_t weight_elements =
-		output_features * input_features;
+    const std::size_t weight_elements = output_features * input_features;
 
-	CHECK_ARGUMENT(
-		output_elements == 0 || out != nullptr,
-		"Linear: output pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        output_elements == 0 || out != nullptr, "Linear: output pointer must not be null.");
 
-	CHECK_ARGUMENT(
-		input_elements == 0 || in != nullptr,
-		"Linear: input pointer must not be null."
-	);
+    CHECK_ARGUMENT(input_elements == 0 || in != nullptr, "Linear: input pointer must not be null.");
 
-	CHECK_ARGUMENT(
-		weight_elements == 0 || weight != nullptr,
-		"Linear: weight pointer must not be null."
-	);
+    CHECK_ARGUMENT(
+        weight_elements == 0 || weight != nullptr, "Linear: weight pointer must not be null.");
 
-	if (output_elements == 0) {
-		return;
-	}
+    if (output_elements == 0) { return; }
 
-	if constexpr (std::is_same_v<T, float>) {
-		linear_float(
-			out,
-			in,
-			weight,
-			bias,
-			row_count,
-			output_features,
-			input_features
-		);
-	} else {
-		// Accumulate FP16/BF16 matrix products in FP32. The two low-precision
-		// paths share the same implementation; only the conversion routines
-		// differ.
-		std::vector<float> input_float(input_elements);
-		std::vector<float> weight_float(weight_elements);
-		std::vector<float> output_float(output_elements);
+    if constexpr (std::is_same_v<T, float>) {
+        linear_float(out, in, weight, bias, row_count, output_features, input_features);
+    } else {
+        // Accumulate FP16/BF16 matrix products in FP32. The two low-precision
+        // paths share the same implementation; only the conversion routines
+        // differ.
+        std::vector<float> input_float(input_elements);
+        std::vector<float> weight_float(weight_elements);
+        std::vector<float> output_float(output_elements);
 
-		if (input_elements > 0) {
-			convert_to_float(
-				input_float.data(),
-				in,
-				input_elements
-			);
-		}
+        if (input_elements > 0) { convert_to_float(input_float.data(), in, input_elements); }
 
-		if (weight_elements > 0) {
-			convert_to_float(
-				weight_float.data(),
-				weight,
-				weight_elements
-			);
-		}
+        if (weight_elements > 0) { convert_to_float(weight_float.data(), weight, weight_elements); }
 
-		std::vector<float> bias_float;
-		const float *bias_pointer = nullptr;
+        std::vector<float> bias_float;
+        const float *bias_pointer = nullptr;
 
-		if (bias != nullptr) {
-			bias_float.resize(output_features);
+        if (bias != nullptr) {
+            bias_float.resize(output_features);
 
-			convert_to_float(
-				bias_float.data(),
-				bias,
-				output_features
-			);
+            convert_to_float(bias_float.data(), bias, output_features);
 
-			bias_pointer = bias_float.data();
-		}
+            bias_pointer = bias_float.data();
+        }
 
-		linear_float(
-			output_float.data(),
-			input_float.data(),
-			weight_float.data(),
-			bias_pointer,
-			row_count,
-			output_features,
-			input_features
-		);
+        linear_float(
+            output_float.data(),
+            input_float.data(),
+            weight_float.data(),
+            bias_pointer,
+            row_count,
+            output_features,
+            input_features);
 
-		convert_from_float(
-			out,
-			output_float.data(),
-			output_elements
-		);
-	}
+        convert_from_float(out, output_float.data(), output_elements);
+    }
 }
 
 } // namespace
@@ -289,31 +181,26 @@ void linear_impl(
 namespace llaisys::ops::cpu {
 
 void linear(
-	std::byte *out,
-	const std::byte *in,
-	const std::byte *weight,
-	const std::byte *bias,
-	llaisysDataType_t type,
-	std::size_t nrow,
-	std::size_t ncol_out,
-	std::size_t ncol_in
-) {
-	return llaisys::device::cpu::dispatch_cpu_dtype(
-		type,
-		[&](auto tag) {
-			using T = typename decltype(tag)::type;
+    std::byte *out,
+    const std::byte *in,
+    const std::byte *weight,
+    const std::byte *bias,
+    llaisysDataType_t type,
+    std::size_t nrow,
+    std::size_t ncol_out,
+    std::size_t ncol_in) {
+    return llaisys::device::cpu::dispatch_cpu_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
 
-			return linear_impl<T>(
-				reinterpret_cast<T *>(out),
-				reinterpret_cast<const T *>(in),
-				reinterpret_cast<const T *>(weight),
-				reinterpret_cast<const T *>(bias),
-				nrow,
-				ncol_out,
-				ncol_in
-			);
-		}
-	);
+        return linear_impl<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight),
+            reinterpret_cast<const T *>(bias),
+            nrow,
+            ncol_out,
+            ncol_in);
+    });
 }
 
 } // namespace llaisys::ops::cpu
