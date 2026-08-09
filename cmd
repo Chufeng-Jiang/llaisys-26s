@@ -1,19 +1,19 @@
-MODEL_PATH="$(cat tmp/model_path.txt)"
+git push origin Cuda-Compatible-Kernel
 
-python test/test_infer.py \
-        --device cpu \
-        --model "$MODEL_PATH" \
-        --prompt "Who are you?" \
-        --max_steps 1 \
-        --test
+1. Add             ✅ DONE
 
-xmake f -c --nv-gpu=n -cv
+2. SwiGLU          ← 下一步
+3. RMSNorm
+4. RoPE
+5. Embedding
+6. Argmax
+7. Linear
+8. SelfAttention   ← 最后
+
 
 cd ~/Desktop/InfiniTensor/llaisys-26s
-
 rm -rf .xmake
 rm -rf build
-
 xmake f -c \
     --nv-gpu=y \
     -cv
