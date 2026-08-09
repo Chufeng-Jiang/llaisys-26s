@@ -20,7 +20,9 @@ def torch_rope(y: torch.Tensor, x: torch.Tensor, pos_ids: torch.Tensor, theta: f
     positions = pos_ids.to(torch.float32).unsqueeze(1)  # [seq_len, 1]
 
     # RoPE frequency exponents: 1 / theta^(2i / d)
-    i = torch.arange(0, head_dim // 2, dtype=torch.float32, device=y.device)  # [1, head_dim//2]
+    i = torch.arange(
+        0, head_dim // 2, dtype=torch.float32, device=y.device
+    )  # [1, head_dim//2]
     freqs = positions / (theta ** (2 * i / head_dim))  # [seq_len, head_dim//2]
 
     sin, cos = freqs.sin(), freqs.cos()
@@ -66,9 +68,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
-    testShapes = [
-        ((2, 1, 4), (0, 2)), 
-        ((512, 4, 4096), (512, 1024))]
+    testShapes = [((2, 1, 4), (0, 2)), ((512, 4, 4096), (512, 1024))]
     testDtypePrec = [
         # type, atol, rtol
         ("f32", 1e-4, 1e-4),
@@ -78,6 +78,8 @@ if __name__ == "__main__":
     print(f"Testing Ops.rope on {args.device}")
     for shape, start_end in testShapes:
         for dtype_name, atol, rtol in testDtypePrec:
-            test_op_rope(shape, start_end, dtype_name, atol, rtol, args.device, args.profile)
+            test_op_rope(
+                shape, start_end, dtype_name, atol, rtol, args.device, args.profile
+            )
 
     print("\033[92mTest passed!\033[0m\n")

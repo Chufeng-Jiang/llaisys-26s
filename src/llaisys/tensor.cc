@@ -6,6 +6,7 @@
 #include "../tensor/tensor.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 #include <vector>
 
 __C {

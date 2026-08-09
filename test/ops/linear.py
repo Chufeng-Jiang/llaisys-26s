@@ -23,7 +23,9 @@ def test_op_linear(
     device_name="cpu",
     profile=False,
 ):
-    print(f"   out {out_shape}, x {x_shape}, w {w_shape}, bias {use_bias}, dtype <{dtype_name}>")
+    print(
+        f"   out {out_shape}, x {x_shape}, w {w_shape}, bias {use_bias}, dtype <{dtype_name}>"
+    )
     x, x_ = random_tensor(x_shape, dtype_name, device_name, scale=0.1)
     w, w_ = random_tensor(w_shape, dtype_name, device_name, scale=0.01)
 

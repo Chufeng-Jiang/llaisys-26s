@@ -1,14 +1,13 @@
 git push origin Cuda-Compatible-Kernel
 
-1. Add             ✅ DONE
 
-2. SwiGLU          ← 下一步
-3. RMSNorm
-4. RoPE
-5. Embedding
-6. Argmax
-7. Linear
-8. SelfAttention   ← 最后
+find src test \
+    \( -name "*.c" -o -name "*.cc" -o -name "*.cpp" \
+       -o -name "*.h" -o -name "*.hpp" \
+       -o -name "*.cu" -o -name "*.cuh" \) \
+    -exec clang-format -i {} +
+
+find src test -name "*.py" -exec black {} +
 
 
 cd ~/Desktop/InfiniTensor/llaisys-26s
@@ -23,6 +22,8 @@ xmake -r -vD 2>&1 \
 
 xmake install
 
+python test/test_runtime.py --device nvidia
+
 python test/ops/add.py --device nvidia
 python test/ops/argmax.py --device nvidia
 python test/ops/embedding.py --device nvidia
@@ -31,9 +32,9 @@ python test/ops/rms_norm.py --device nvidia
 python test/ops/rope.py --device nvidia
 python test/ops/self_attention.py --device nvidia
 python test/ops/swiglu.py --device nvidia
-python test/test_runtime.py --device nvidia
 
 
+python test/test_runtime.py --device cpu
 python test/ops/add.py --device cpu
 python test/ops/argmax.py --device cpu
 python test/ops/embedding.py --device cpu

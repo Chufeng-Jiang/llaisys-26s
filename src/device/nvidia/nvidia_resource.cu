@@ -1,7 +1,6 @@
-#include "nvidia_resource.cuh"
-
 #include "nvidia_common.cuh"
-
+#include "nvidia_resource.cuh"
+#include "nvidia_resource_factory.hpp"
 #include <cuda_runtime.h>
 
 #include <memory>
@@ -73,6 +72,10 @@ thread_local std::unordered_map<int, cudaDeviceProp> device_properties_cache;
 } // namespace
 
 namespace llaisys::device::nvidia {
+
+std::unique_ptr<llaisys::device::DeviceResource> createDeviceResource(int device_id) {
+    return std::make_unique<Resource>(device_id);
+}
 
 // ============================================================
 // Runtime-owned Resource implementation

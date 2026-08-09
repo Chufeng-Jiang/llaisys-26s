@@ -57,16 +57,13 @@ if __name__ == "__main__":
             test_op_argmax(shape, dtype_name, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")
-    
-    """
-    
-    
+
+"""
+
 import os
 import sys
 
-parent_dir = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..")
-)
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
 import llaisys
@@ -180,27 +177,22 @@ if __name__ == "__main__":
         # Basic cases.
         (1,),
         (4,),
-
         # Warp boundaries.
         (31,),
         (32,),
         (33,),
-
         # Typical CUDA block boundaries.
         (255,),
         (256,),
         (257,),
-
         # CUDA single-block/multi-block path boundary.
         (4095,),
         (4096,),
         (4097,),
-
         # CPU OpenMP threshold boundary.
         (32767,),
         (32768,),
         (32769,),
-
         # Large grid-stride-loop case.
         (512 * 4096,),
     ]

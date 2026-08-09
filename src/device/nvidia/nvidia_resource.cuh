@@ -61,9 +61,6 @@ cublasHandle_t get_cublas_handle(cudaStream_t stream);
 // calls from hot operator paths.
 const cudaDeviceProp &get_device_properties(int device_id);
 
-// Convert a cuBLAS status code to a readable symbolic name.
-const char *cublas_status_name(cublasStatus_t status) noexcept;
-
 } // namespace llaisys::device::nvidia
 
 #ifndef CUBLAS_CHECK

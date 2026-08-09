@@ -27,7 +27,7 @@ def test_op_rms_norm(
 ):
     print(f"   shape {shape} dtype <{dtype_name}>")
     x, x_ = random_tensor(shape, dtype_name, device_name)
-    w, w_ = random_tensor((shape[1], ), dtype_name, device_name)
+    w, w_ = random_tensor((shape[1],), dtype_name, device_name)
     eps = 1e-5
 
     c, c_ = random_tensor(shape, dtype_name, device_name)

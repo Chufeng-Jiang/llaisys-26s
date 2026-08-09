@@ -1,73 +1,134 @@
 #include "runtime.hpp"
-
-#include "../../device/runtime_api.hpp"
 #include "../allocator/naive_allocator.hpp"
-
-#ifdef ENABLE_NVIDIA_API
-#include "../../device/nvidia/nvidia_resource.cuh"
-#endif
+#include "../storage/storage.hpp"
 
 #include <memory>
+#include <utility>
 
 namespace llaisys::core {
 
 Runtime::Runtime(llaisysDeviceType_t device_type, int device_id)
     : _device_type(device_type), _device_id(device_id), _api(nullptr), _allocator(nullptr),
       _is_active(false), _stream(nullptr), _resource(nullptr) {
+    // ========================================================
+    // Runtime API
+    // ========================================================
+
     _api = llaisys::device::getRuntimeAPI(_device_type);
+
+    // ========================================================
+    // Select the device BEFORE creating device-owned resources
+    // ========================================================
+    //
+    // Streams and backend resources are associated with the
+    // currently selected accelerator device.
+    // ========================================================
+
+    _api->set_device(_device_id);
+
+    // ========================================================
+    // Stream
+    // ========================================================
 
     _stream = _api->create_stream();
 
-    _allocator = new allocators::NaiveAllocator(_api);
+    try {
+        // ====================================================
+        // Device-memory allocator
+        // ====================================================
 
-    // Create backend-specific reusable resources.
-    switch (_device_type) {
-    case LLAISYS_DEVICE_CPU:
-        // The CPU backend currently has no extra Runtime resource.
-        _resource = nullptr;
-        break;
+        _allocator = std::make_unique<allocators::NaiveAllocator>(_api);
 
-#ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA:
-        _resource = std::make_unique<llaisys::device::nvidia::Resource>(_device_id);
-        break;
-#endif
+        // ====================================================
+        // Optional backend-specific reusable resource
+        // ====================================================
 
-    default:
-        // Other backends can add their own Resource classes later.
-        _resource = nullptr;
-        break;
+        _resource = llaisys::device::createDeviceResource(_device_type, _device_id);
+    } catch (...) {
+        // Runtime construction did not complete, therefore the
+        // destructor will not run. Release resources created
+        // before the exception here.
+
+        _resource.reset();
+        _allocator.reset();
+
+        if (_api != nullptr && _stream != nullptr) {
+            try {
+                _api->destroy_stream(_stream);
+            } catch (...) {
+                // Best-effort cleanup while propagating the
+                // original construction failure.
+            }
+
+            _stream = nullptr;
+        }
+
+        throw;
     }
 }
 
-Runtime::~Runtime() {
-    if (!_is_active) { std::cerr << "Mallicious destruction of inactive runtime." << std::endl; }
-
-    // Select this Runtime's device before synchronizing or
-    // destroying its device-specific resources.
-    if (_api != nullptr) { _api->set_device(_device_id); }
-
-    // The Argmax workspace may still be used by kernels submitted
-    // to this Runtime's stream.
+Runtime::~Runtime() noexcept {
+    // Runtime destruction must be self-contained.
     //
-    // Complete those operations before freeing the workspace.
-    if (_api != nullptr && _stream != nullptr) { _api->stream_synchronize(_stream); }
+    // Context does not need to activate this Runtime before
+    // destroying it.
 
-    // Destroy the backend-specific Resource before destroying
-    // the CUDA stream.
+    if (_api == nullptr) { return; }
+
+    // ========================================================
+    // Select this Runtime's own device
+    // ========================================================
+
+    try {
+        _api->set_device(_device_id);
+    } catch (...) {
+        // Destructors must not throw.
+    }
+
+    // ========================================================
+    // Complete work submitted to this Runtime's stream
+    // ========================================================
+
+    if (_stream != nullptr) {
+        try {
+            _api->stream_synchronize(_stream);
+        } catch (...) {
+            // Best-effort cleanup.
+        }
+    }
+
+    // ========================================================
+    // Release backend resources
+    // ========================================================
     //
-    // For NVIDIA, this invokes nvidia::Resource::~Resource(),
-    // which frees the reusable Argmax workspace.
+    // Resource destruction occurs before stream destruction
+    // because resources may have been used by work submitted
+    // to this stream.
+    // ========================================================
+
     _resource.reset();
 
-    delete _allocator;
-    _allocator = nullptr;
+    // ========================================================
+    // Release allocator
+    // ========================================================
 
-    if (_api != nullptr && _stream != nullptr) {
-        _api->destroy_stream(_stream);
+    _allocator.reset();
+
+    // ========================================================
+    // Destroy Runtime-owned stream
+    // ========================================================
+
+    if (_stream != nullptr) {
+        try {
+            _api->destroy_stream(_stream);
+        } catch (...) {
+            // Destructors must not throw.
+        }
 
         _stream = nullptr;
     }
+
+    _is_active = false;
 
     _api = nullptr;
 }
@@ -100,9 +161,11 @@ storage_t Runtime::allocateHostStorage(std::size_t size) {
 void Runtime::freeStorage(Storage *storage) {
     if (storage->isHost()) {
         _api->free_host(storage->memory());
-    } else {
-        _allocator->release(storage->memory());
+
+        return;
     }
+
+    _allocator->release(storage->memory());
 }
 
 llaisysStream_t Runtime::stream() const { return _stream; }

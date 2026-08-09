@@ -1,20 +1,27 @@
 #pragma once
+
 #include "llaisys/runtime.h"
 
-#include "../utils.hpp"
-
 namespace llaisys::device {
+
 const LlaisysRuntimeAPI *getRuntimeAPI(llaisysDeviceType_t device_type);
 
 const LlaisysRuntimeAPI *getUnsupportedRuntimeAPI();
 
 namespace cpu {
+
 const LlaisysRuntimeAPI *getRuntimeAPI();
-}
+
+} // namespace cpu
 
 #ifdef ENABLE_NVIDIA_API
+
 namespace nvidia {
+
 const LlaisysRuntimeAPI *getRuntimeAPI();
-}
+
+} // namespace nvidia
+
 #endif
+
 } // namespace llaisys::device

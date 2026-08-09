@@ -7,6 +7,7 @@
 #include "../allocator/allocator.hpp"
 #include "../core.hpp"
 
+#include <cstddef>
 #include <memory>
 
 namespace llaisys::core {
@@ -17,19 +18,17 @@ private:
     int _device_id;
 
     const LlaisysRuntimeAPI *_api;
-    MemoryAllocator *_allocator;
+
+    std::unique_ptr<MemoryAllocator> _allocator;
 
     bool _is_active;
 
     llaisysStream_t _stream;
 
-    // Store backend-specific reusable resources.
+    // Opaque backend-specific reusable resources.
     //
-    // CPU:
-    //     nullptr
-    //
-    // NVIDIA:
-    //     llaisys::device::nvidia::Resource
+    // A backend may return nullptr when it has no extra
+    // Runtime-owned resources.
     std::unique_ptr<llaisys::device::DeviceResource> _resource;
 
     void _activate();
@@ -40,23 +39,26 @@ private:
 public:
     friend class Context;
 
-    ~Runtime();
+    ~Runtime() noexcept;
 
-    // Prevent copying.
     Runtime(const Runtime &) = delete;
+
     Runtime &operator=(const Runtime &) = delete;
 
-    // Prevent moving.
     Runtime(Runtime &&) = delete;
+
     Runtime &operator=(Runtime &&) = delete;
 
     llaisysDeviceType_t deviceType() const;
+
     int deviceId() const;
+
     bool isActive() const;
 
     const LlaisysRuntimeAPI *api() const;
 
     storage_t allocateDeviceStorage(std::size_t size);
+
     storage_t allocateHostStorage(std::size_t size);
 
     void freeStorage(Storage *storage);
@@ -64,6 +66,7 @@ public:
     llaisysStream_t stream() const;
 
     llaisys::device::DeviceResource *resource();
+
     const llaisys::device::DeviceResource *resource() const;
 
     void synchronize() const;
