@@ -1,5 +1,6 @@
 #include "../../core/llaisys_core.hpp"
 #include "../../utils.hpp"
+
 #include "cpu/add_cpu.hpp"
 #include "op.hpp"
 
@@ -8,33 +9,84 @@
 #endif
 
 namespace llaisys::ops {
-void add(tensor_t c, tensor_t a, tensor_t b) {
-  CHECK_SAME_DEVICE(c, a, b);
-  // Only support contiguous inputs with same shape for now.
-  CHECK_SAME_SHAPE(c->shape(), a->shape(), b->shape());
-  CHECK_SAME_DTYPE(c->dtype(), a->dtype(), b->dtype());
-  ASSERT(c->isContiguous() && a->isContiguous() && b->isContiguous(),
-         "Add: all tensors must be contiguous.");
 
-  // always support cpu calculation
-  if (c->deviceType() == LLAISYS_DEVICE_CPU) {
-    return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
-  }
+void add(
+	tensor_t c,
+	tensor_t a,
+	tensor_t b
+) {
+	// ============================================================
+	// Validation
+	// ============================================================
 
-  llaisys::core::context().setDevice(c->deviceType(), c->deviceId());
+	CHECK_SAME_DEVICE(
+		c,
+		a,
+		b
+	);
 
-  switch (c->deviceType()) {
-    case LLAISYS_DEVICE_CPU:
-      return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
+	CHECK_SAME_SHAPE(
+		c->shape(),
+		a->shape(),
+		b->shape()
+	);
+
+	CHECK_SAME_DTYPE(
+		c->dtype(),
+		a->dtype(),
+		b->dtype()
+	);
+
+	ASSERT(
+		c->isContiguous()
+			&& a->isContiguous()
+			&& b->isContiguous(),
+		"Add: all tensors must be contiguous."
+	);
+
+	// ============================================================
+	// Device dispatch
+	// ============================================================
+
+	switch (c->deviceType()) {
+
+	case LLAISYS_DEVICE_CPU:
+		return cpu::add(
+			c->data(),
+			a->data(),
+			b->data(),
+			c->dtype(),
+			c->numel()
+		);
 
 #ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA: {
-      return nvidia::add(c->data(), a->data(), b->data(), c->dtype(),
-                         c->numel(), core::context().runtime().stream());
-    }
+
+	case LLAISYS_DEVICE_NVIDIA: {
+		// Select the correct NVIDIA device before obtaining its
+		// Runtime object and Runtime-owned CUDA stream.
+		core::context().setDevice(
+			c->deviceType(),
+			c->deviceId()
+		);
+
+		auto &runtime =
+			core::context().runtime();
+
+		return nvidia::add(
+			c->data(),
+			a->data(),
+			b->data(),
+			c->dtype(),
+			c->numel(),
+			runtime.stream()
+		);
+	}
+
 #endif
-    default:
-      EXCEPTION_UNSUPPORTED_DEVICE;
-  }
+
+	default:
+		EXCEPTION_UNSUPPORTED_DEVICE;
+	}
 }
-}  // namespace llaisys::ops
+
+} // namespace llaisys::ops

@@ -21,6 +21,8 @@ xmake f -c \
 xmake -r -vD 2>&1 \
     | tee /tmp/cuda12-build.log
 
+xmake install
+
 python test/ops/add.py --device nvidia
 python test/ops/argmax.py --device nvidia
 python test/ops/embedding.py --device nvidia
