@@ -197,6 +197,8 @@ def llaisys_device(device_name: str):
         return llaisys.DeviceType.CPU
     elif device_name == "nvidia":
         return llaisys.DeviceType.NVIDIA
+    elif device_name == "metax":
+        return llaisys.DeviceType.METAX
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
 
@@ -206,6 +208,8 @@ def device_name(llaisys_device: llaisys.DeviceType):
         return "cpu"
     elif llaisys_device == llaisys.DeviceType.NVIDIA:
         return "nvidia"
+    elif llaisys_device == llaisys.DeviceType.METAX:
+        return "metax"
     else:
         raise ValueError(f"Unsupported llaisys device: {llaisys_device}")
 

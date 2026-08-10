@@ -22,6 +22,9 @@ createDeviceResource(llaisysDeviceType_t device_type, int device_id) {
         return nullptr;
 #endif
 
+    case LLAISYS_DEVICE_METAX:
+        return nullptr;
+
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;
         return nullptr;

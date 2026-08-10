@@ -13,9 +13,32 @@ option("nv-gpu")
     set_description("Whether to compile implementations for Nvidia GPU")
 option_end()
 
+-- MetaX --
+option("metax-gpu")
+	set_default(false)
+	set_showmenu(true)
+	set_description(
+		"Whether to compile implementations for MetaX GPU"
+	)
+option_end()
+
+
+if has_config("nv-gpu")
+	and has_config("metax-gpu") then
+
+	raise(
+		"Only one GPU backend may be enabled per build."
+	)
+end
+
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")
+end
+
+if has_config("metax-gpu") then
+	add_defines("ENABLE_METAX_API")
+	includes("xmake/metax.lua")
 end
 
 target("llaisys-utils")
@@ -40,6 +63,10 @@ target("llaisys-device")
 
     if has_config("nv-gpu") then
         add_deps("llaisys-device-nvidia")
+    end
+
+    if has_config("metax-gpu") then
+	    add_deps("llaisys-device-metax")
     end
 
     set_languages("cxx17")
