@@ -5,7 +5,11 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 import llaisys
 import torch
-from test_utils import random_tensor, check_equal, benchmark
+from test_utils import (
+    random_tensor,
+    check_equal,
+    benchmark_llaisys,
+)
 
 
 def torch_add(ans, a, b):
@@ -31,10 +35,18 @@ def test_op_add(
     assert check_equal(c_, c, atol=atol, rtol=rtol)
 
     if profile:
-        benchmark(
-            lambda: torch_add(c, a, b),
-            lambda: llaisys.Ops.add(c_, a_, b_),
+        benchmark_llaisys(
+            lambda: llaisys.Ops.add(
+                c_,
+                a_,
+                b_,
+            ),
             device_name,
+            label=(
+                f"Add "
+                f"shape={shape} "
+                f"dtype={dtype_name}"
+            ),
         )
 
 

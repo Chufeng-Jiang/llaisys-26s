@@ -272,28 +272,159 @@ def check_equal(
     return False
 
 
-def benchmark(torch_func, llaisys_func, device_name, warmup=10, repeat=100):
-    api = llaisys.RuntimeAPI(llaisys_device(device_name))
+def _benchmark_function(
+    func,
+    synchronize,
+    warmup=10,
+    repeat=100,
+    rounds=10,
+):
+    import statistics
+    import time
 
-    def time_op(func):
-        import time
+    # Warm up.
+    for _ in range(warmup):
+        func()
 
-        for _ in range(warmup):
-            func()
-        api.device_synchronize()
-        start = time.time()
+    synchronize()
+
+    samples_ms = []
+
+    for _ in range(rounds):
+        synchronize()
+
+        start = time.perf_counter_ns()
+
         for _ in range(repeat):
             func()
-        api.device_synchronize()
-        end = time.time()
-        return (end - start) / repeat
 
-    torch_time = time_op(torch_func)
-    llaisys_time = time_op(llaisys_func)
-    print(
-        f"        Torch time: {torch_time*1000:.5f} ms \n        LLAISYS time: {llaisys_time*1000:.5f} ms"
+        synchronize()
+
+        end = time.perf_counter_ns()
+
+        elapsed_ms = (
+            end - start
+        ) / 1_000_000.0
+
+        samples_ms.append(
+            elapsed_ms / repeat
+        )
+
+    return {
+        "mean_ms": statistics.mean(samples_ms),
+        "median_ms": statistics.median(samples_ms),
+        "min_ms": min(samples_ms),
+        "max_ms": max(samples_ms),
+        "samples_ms": samples_ms,
+    }
+
+
+def benchmark_llaisys(
+    llaisys_func,
+    device_name,
+    warmup=10,
+    repeat=100,
+    rounds=10,
+    label=None,
+):
+    api = llaisys.RuntimeAPI(
+        llaisys_device(device_name)
     )
 
+    def synchronize():
+        api.device_synchronize()
+
+    stats = _benchmark_function(
+        llaisys_func,
+        synchronize,
+        warmup=warmup,
+        repeat=repeat,
+        rounds=rounds,
+    )
+
+    prefix = (
+        f"{label}: "
+        if label is not None
+        else ""
+    )
+
+    print(
+        f"        {prefix}"
+        f"LLAISYS {device_name}: "
+        f"median={stats['median_ms']:.5f} ms, "
+        f"mean={stats['mean_ms']:.5f} ms, "
+        f"min={stats['min_ms']:.5f} ms, "
+        f"max={stats['max_ms']:.5f} ms"
+    )
+
+    return stats
+
+
+def benchmark(
+    torch_func,
+    llaisys_func,
+    device_name,
+    warmup=10,
+    repeat=100,
+    rounds=10,
+):
+    llaisys_stats = benchmark_llaisys(
+        llaisys_func,
+        device_name,
+        warmup=warmup,
+        repeat=repeat,
+        rounds=rounds,
+    )
+
+    if device_name == "metax":
+        print(
+            "        Torch comparison skipped: "
+            "the reference tensor is on CPU."
+        )
+        return {
+            "torch": None,
+            "llaisys": llaisys_stats,
+        }
+
+    if device_name == "cpu":
+
+        def torch_synchronize():
+            pass
+
+    elif device_name == "nvidia":
+
+        def torch_synchronize():
+            torch.cuda.synchronize()
+
+    else:
+        raise ValueError(
+            f"Unsupported benchmark device: "
+            f"{device_name}"
+        )
+
+    torch_stats = _benchmark_function(
+        torch_func,
+        torch_synchronize,
+        warmup=warmup,
+        repeat=repeat,
+        rounds=rounds,
+    )
+
+    print(
+        f"        Torch {device_name}: "
+        f"median={torch_stats['median_ms']:.5f} ms"
+    )
+
+    print(
+        f"        Speedup: "
+        f"{torch_stats['median_ms'] / llaisys_stats['median_ms']:.3f}x"
+    )
+
+    return {
+        "torch": torch_stats,
+        "llaisys": llaisys_stats,
+    }
+    
 
 def torch_device(device_name: str, device_id=0):
     if device_name == "cpu":
