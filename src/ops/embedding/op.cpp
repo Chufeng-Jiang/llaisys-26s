@@ -7,6 +7,10 @@
 #include "nvidia/embedding_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/embedding_metax.hpp"
+#endif
+
 namespace llaisys::ops {
 
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
@@ -145,6 +149,30 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
             vocabulary_size,
             runtime.stream());
     }
+#endif
+
+#ifdef ENABLE_METAX_API
+	case LLAISYS_DEVICE_METAX: {
+		// Select the device containing the tensors.
+		core::context().setDevice(
+			out->deviceType(),
+			out->deviceId()
+		);
+
+		auto &runtime =
+			core::context().runtime();
+
+		return metax::embedding(
+			out->data(),
+			index->data(),
+			weight->data(),
+			weight->dtype(),
+			out->numel(),
+			embedding_length,
+			vocabulary_size,
+			runtime.stream()
+		);
+	}
 #endif
 
     default:

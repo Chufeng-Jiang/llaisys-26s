@@ -7,6 +7,11 @@
 #include "nvidia/rope_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/rope_metax.hpp"
+#endif
+
+
 #include <cmath>
 #include <cstddef>
 
@@ -126,6 +131,30 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
             head_dimension,
             runtime.stream());
     }
+#endif
+
+#ifdef ENABLE_METAX_API
+	case LLAISYS_DEVICE_METAX: {
+		core::context().setDevice(
+			out->deviceType(),
+			out->deviceId()
+		);
+
+		auto &runtime =
+			core::context().runtime();
+
+		return metax::rope(
+			out->data(),
+			in->data(),
+			pos_ids->data(),
+			theta,
+			out->dtype(),
+			sequence_length,
+			head_count,
+			head_dimension,
+			runtime.stream()
+		);
+	}
 #endif
 
     default:

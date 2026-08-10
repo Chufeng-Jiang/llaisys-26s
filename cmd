@@ -9,7 +9,24 @@ find src test \
 
 find src test -name "*.py" -exec black {} +
 
+Add       ✅
+SwiGLU    ✅
+   ↓
+Embedding ← next
+   ↓
+RoPE
+   ↓
+RMSNorm
+   ↓
+Argmax
+   ↓
+Linear
+   ↓
+SelfAttention
+   ↓
+Full Qwen
 
+--------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
 rm -rf .xmake
 rm -rf build
@@ -21,6 +38,31 @@ xmake -r -vD 2>&1 \
     | tee /tmp/cuda12-build.log
 
 xmake install
+
+-----------------------------------------------------
+
+cd /data/llaisys-26s
+
+export MACA_PATH=/opt/maca
+export XMAKE_ROOT=y
+export PYTHONPATH=/data/llaisys-26s/python:$PYTHONPATH
+
+xmake f -c \
+    --nv-gpu=n \
+    --metax-gpu=y \
+    -cv
+
+xmake -r -vD 2>&1 | tee /data/metax-build.log
+
+xmake install
+
+pip install -e ./python
+
+python test/test_runtime.py --device metax
+
+python test/ops/add.py --device metax
+
+-------------------------------------------
 
 python test/test_runtime.py --device nvidia
 

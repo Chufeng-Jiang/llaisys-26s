@@ -246,31 +246,304 @@ def check_equal(
         ),
     )
 
+    # ========================================================
+    # Correctness check
+    # ========================================================
+
     if strict:
-        if torch.equal(
-            result,
-            torch_answer,
-        ):
+        mismatch_mask = (
+            result != torch_answer
+        )
+
+        if not torch.any(mismatch_mask):
             return True
+
     else:
-        if torch.allclose(
+        close_mask = torch.isclose(
             result,
             torch_answer,
             atol=atol,
             rtol=rtol,
-        ):
+        )
+
+        if torch.all(close_mask):
             return True
 
+        mismatch_mask = ~close_mask
+
+    # ========================================================
+    # Diagnostic representation
+    # ========================================================
+
+    result_f32 = result.to(
+        torch.float32
+    )
+
+    answer_f32 = torch_answer.to(
+        torch.float32
+    )
+
+    abs_error = torch.abs(
+        result_f32
+        - answer_f32
+    )
+
+    denominator = torch.clamp(
+        torch.abs(
+            answer_f32
+        ),
+        min=1e-12,
+    )
+
+    rel_error = (
+        abs_error
+        / denominator
+    )
+
+    # ========================================================
+    # Mismatch statistics
+    # ========================================================
+
+    mismatch_count = int(
+        mismatch_mask
+        .sum()
+        .item()
+    )
+
+    total_count = int(
+        result.numel()
+    )
+
+    mismatch_ratio = (
+        mismatch_count
+        / total_count
+        if total_count > 0
+        else 0.0
+    )
+
+    max_abs_error = float(
+        abs_error
+        .max()
+        .item()
+    )
+
+    max_rel_error = float(
+        rel_error
+        .max()
+        .item()
+    )
+
+    # ========================================================
+    # Find worst FAILED element
+    #
+    # Important:
+    # only search among elements that actually violate
+    # torch.isclose(), rather than all elements.
+    # ========================================================
+
+    mismatch_abs_error = torch.where(
+        mismatch_mask,
+        abs_error,
+        torch.zeros_like(
+            abs_error
+        ),
+    )
+
+    flat_error = (
+        mismatch_abs_error
+        .reshape(-1)
+    )
+
+    worst_flat_index = int(
+        torch.argmax(
+            flat_error
+        ).item()
+    )
+
+    # ========================================================
+    # Convert flat index -> tensor coordinates
+    # ========================================================
+
+    remaining = worst_flat_index
+    reversed_index = []
+
+    for dim_size in reversed(shape):
+        reversed_index.append(
+            remaining
+            % dim_size
+        )
+
+        remaining //= dim_size
+
+    worst_index = tuple(
+        reversed(
+            reversed_index
+        )
+    )
+
+    result_value = float(
+        result_f32[
+            worst_index
+        ].item()
+    )
+
+    answer_value = float(
+        answer_f32[
+            worst_index
+        ].item()
+    )
+
+    worst_abs_error = float(
+        abs_error[
+            worst_index
+        ].item()
+    )
+
+    worst_rel_error = float(
+        rel_error[
+            worst_index
+        ].item()
+    )
+
+    # ========================================================
+    # Allowed error at the worst failed element
+    # ========================================================
+
+    allowed_error = (
+        float(atol)
+        + float(rtol)
+        * abs(answer_value)
+    )
+
+    error_over_allowed = (
+        worst_abs_error
+        / allowed_error
+        if allowed_error > 0
+        else float("inf")
+    )
+
+    # ========================================================
+    # Print compact diagnostics
+    # ========================================================
+
+    print()
     print(
-        f"LLAISYS result: \n{result}"
+        "========================================"
+    )
+    print(
+        "Tensor mismatch diagnostics"
+    )
+    print(
+        "========================================"
     )
 
     print(
-        f"Torch answer: \n{torch_answer}"
+        f"shape             = {shape}"
     )
+
+    print(
+        f"dtype             = "
+        f"{torch_answer.dtype}"
+    )
+
+    print(
+        f"strict            = {strict}"
+    )
+
+    print(
+        f"atol              = "
+        f"{atol:.10e}"
+    )
+
+    print(
+        f"rtol              = "
+        f"{rtol:.10e}"
+    )
+
+    print()
+
+    print(
+        f"mismatch_count    = "
+        f"{mismatch_count}"
+    )
+
+    print(
+        f"total_count       = "
+        f"{total_count}"
+    )
+
+    print(
+        f"mismatch_ratio    = "
+        f"{mismatch_ratio:.10%}"
+    )
+
+    print()
+
+    print(
+        f"max_abs_error     = "
+        f"{max_abs_error:.10e}"
+    )
+
+    print(
+        f"max_rel_error     = "
+        f"{max_rel_error:.10e}"
+    )
+
+    print()
+    print(
+        "Worst failed element"
+    )
+    print(
+        "----------------------------------------"
+    )
+
+    print(
+        f"flat_index        = "
+        f"{worst_flat_index}"
+    )
+
+    print(
+        f"index             = "
+        f"{worst_index}"
+    )
+
+    print(
+        f"LLAISYS           = "
+        f"{result_value:.10e}"
+    )
+
+    print(
+        f"Torch             = "
+        f"{answer_value:.10e}"
+    )
+
+    print(
+        f"abs_error         = "
+        f"{worst_abs_error:.10e}"
+    )
+
+    print(
+        f"rel_error         = "
+        f"{worst_rel_error:.10e}"
+    )
+
+    if not strict:
+        print(
+            f"allowed_error     = "
+            f"{allowed_error:.10e}"
+        )
+
+        print(
+            f"error / allowed   = "
+            f"{error_over_allowed:.6f}x"
+        )
+
+    print(
+        "========================================"
+    )
+    print()
 
     return False
-
 
 def _benchmark_function(
     func,

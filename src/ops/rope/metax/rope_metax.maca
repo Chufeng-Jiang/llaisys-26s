@@ -1,0 +1,357 @@
+#include "../../../device/metax/metax_common.hpp"
+#include "../../../device/metax/metax_dtype.hpp"
+#include "../../../utils.hpp"
+
+#include "../cuda_compat/rope_cuda_compat.cuh"
+#include "rope_metax.hpp"
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <cstdlib>
+#include <cstring>
+
+namespace {
+
+namespace cuda_compat =
+	llaisys::ops::cuda_compat;
+
+using llaisys::device::metax::dispatch_metax_dtype;
+
+using llaisys::utils::checked_product;
+
+inline constexpr std::size_t
+METAX_ROPE_MAX_CACHED_SHARED_BYTES =
+	16 * 1024;
+
+
+// ============================================================
+// MetaX RoPE portable baseline
+// ============================================================
+//
+// First MetaX baseline deliberately uses the shared direct
+// kernel.
+//
+// This avoids making an unverified MetaX-specific assumption
+// about:
+//
+//     dynamic shared-memory capacity
+//     shared-memory occupancy tradeoffs
+//     cached-kernel threshold
+//
+// Once functional portability is established, the shared
+// cached kernel can be enabled and tuned separately.
+// ============================================================
+
+template <typename T>
+void launch_metax_rope(
+	T *out,
+	const T *in,
+	const std::int64_t *position_ids,
+	float theta,
+	std::size_t sequence_length,
+	std::size_t head_count,
+	std::size_t dimension,
+	mcStream_t stream
+) {
+	// ========================================================
+	// Validation
+	// ========================================================
+
+	const std::size_t vector_count =
+		checked_product(
+			sequence_length,
+			head_count,
+			"RoPE: sequence/head count overflows size_t."
+		);
+
+	const std::size_t element_count =
+		checked_product(
+			vector_count,
+			dimension,
+			"RoPE: tensor element count overflows size_t."
+		);
+
+	CHECK_ARGUMENT(
+		element_count == 0 || out != nullptr,
+		"RoPE: output pointer must not be null."
+	);
+
+	CHECK_ARGUMENT(
+		element_count == 0 || in != nullptr,
+		"RoPE: input pointer must not be null."
+	);
+
+	CHECK_ARGUMENT(
+		sequence_length == 0
+			|| position_ids != nullptr,
+		"RoPE: position-id pointer must not be null."
+	);
+
+	CHECK_ARGUMENT(
+		sequence_length == 0
+			|| head_count > 0,
+		"RoPE: head count must be greater than zero "
+		"for a nonempty sequence."
+	);
+
+	CHECK_ARGUMENT(
+		dimension > 0,
+		"RoPE: head dimension must be greater than zero."
+	);
+
+	CHECK_ARGUMENT(
+		dimension % 2 == 0,
+		"RoPE: head dimension must be even."
+	);
+
+	CHECK_ARGUMENT(
+		std::isfinite(theta)
+			&& theta > 0.0F,
+		"RoPE: theta must be finite and greater than zero."
+	);
+
+	if (element_count == 0) {
+		return;
+	}
+
+	// ========================================================
+	// Algorithm dimensions
+	// ========================================================
+
+	const std::size_t half_dimension =
+		dimension / 2;
+
+	CHECK_ARGUMENT(
+		half_dimension > 0,
+		"RoPE: half dimension must be greater than zero."
+	);
+
+	// ========================================================
+	// MetaX launch configuration
+	// ========================================================
+	//
+	// One block initially owns one token.
+	//
+	// The shared kernel already contains:
+	//
+	//     token += gridDim.x
+	//
+	// so MetaX-specific grid capping can be added later
+	// without modifying the shared algorithm.
+	// ========================================================
+
+	constexpr unsigned int block_size = 256;
+
+	CHECK_ARGUMENT(
+		sequence_length
+			<= static_cast<std::size_t>(
+				std::numeric_limits<unsigned int>::max()
+			),
+		"RoPE: MetaX grid size exceeds supported launch range."
+	);
+
+	const std::size_t grid_size =
+		sequence_length;
+
+	// ========================================================
+	// Portable baseline policy
+	// ========================================================
+	//
+	// Do NOT copy NVIDIA's cached threshold here.
+	//
+	// NVIDIA currently uses:
+	//
+	//     head_count > 1
+	//     half_dimension <= 2048
+	//
+	// but that threshold reflects NVIDIA shared-memory /
+	// occupancy tuning rather than algorithm semantics.
+	// ========================================================
+
+
+// ========================================================
+// MetaX cached-kernel validation policy
+// ========================================================
+//
+// The cached kernel stores:
+//
+//     cosine_cache[half_dimension]
+//     sine_cache[half_dimension]
+//
+// in dynamic shared memory.
+//
+// This 16 KiB cap is only a conservative functional-
+// validation limit. It is NOT a tuned MetaX threshold.
+// ========================================================
+
+    CHECK_ARGUMENT(
+        half_dimension
+            <= std::numeric_limits<std::size_t>::max()
+                / (2 * sizeof(float)),
+        "RoPE: cached shared-memory size overflows size_t."
+    );
+
+    const std::size_t cached_shared_memory_bytes =
+        2
+        * half_dimension
+        * sizeof(float);
+
+    // Conservative MetaX policy derived from the current
+    // RoPE direct-vs-cached characterization.
+    //
+    // Cached execution is currently enabled only for
+    // multi-token, multi-head workloads with small head
+    // dimensions. The threshold is empirical and should
+    // be revisited after broader profiling.
+
+// ========================================================
+// MetaX RoPE cache policy
+// ========================================================
+//
+// Environment override:
+//
+//     LLAISYS_METAX_ROPE_CACHE=direct
+//     LLAISYS_METAX_ROPE_CACHE=cached
+//     LLAISYS_METAX_ROPE_CACHE=auto
+//
+// "auto" uses the current empirical MetaX policy.
+//
+// "cached" forces the cached path for experiments while
+// still respecting the shared-memory safety limit.
+// ========================================================
+
+const bool cache_is_supported =
+	head_count > 1
+	&& cached_shared_memory_bytes
+		<= METAX_ROPE_MAX_CACHED_SHARED_BYTES;
+
+const bool auto_cached_kernel =
+	head_count > 1
+	&& half_dimension <= 64
+	&& cached_shared_memory_bytes
+		<= METAX_ROPE_MAX_CACHED_SHARED_BYTES;
+
+bool use_cached_kernel =
+	auto_cached_kernel;
+
+const char *cache_mode =
+	std::getenv(
+		"LLAISYS_METAX_ROPE_CACHE"
+	);
+
+if (cache_mode != nullptr) {
+	if (
+		std::strcmp(
+			cache_mode,
+			"direct"
+		)
+		== 0
+	) {
+		use_cached_kernel = false;
+	} else if (
+		std::strcmp(
+			cache_mode,
+			"cached"
+		)
+		== 0
+	) {
+		use_cached_kernel =
+			cache_is_supported;
+	} else if (
+		std::strcmp(
+			cache_mode,
+			"auto"
+		)
+		== 0
+	) {
+		use_cached_kernel =
+			auto_cached_kernel;
+	} else {
+		CHECK_ARGUMENT(
+			false,
+			"RoPE: invalid "
+			"LLAISYS_METAX_ROPE_CACHE value. "
+			"Expected direct, cached, or auto."
+		);
+	}
+}
+
+//    const bool use_cached_kernel = false;
+
+	// ========================================================
+	// Shared CUDA-compatible implementation
+	// ========================================================
+
+	cuda_compat::launch_rope_kernel<T>(
+		out,
+		in,
+		position_ids,
+		theta,
+		sequence_length,
+		head_count,
+		dimension,
+		block_size,
+		grid_size,
+		use_cached_kernel,
+		stream
+	);
+
+	// ========================================================
+	// MetaX-specific launch error checking
+	// ========================================================
+
+	MC_CHECK(
+		mcGetLastError()
+	);
+}
+
+} // namespace
+
+
+namespace llaisys::ops::metax {
+
+void rope(
+	std::byte *out,
+	const std::byte *in,
+	const std::byte *pos_ids,
+	float theta,
+	llaisysDataType_t type,
+	std::size_t seqlen,
+	std::size_t nhead,
+	std::size_t d,
+	llaisysStream_t stream
+) {
+	const mcStream_t mc_stream =
+		reinterpret_cast<mcStream_t>(
+			stream
+		);
+
+	return dispatch_metax_dtype(
+		type,
+		[&](auto tag) {
+			using T =
+				typename decltype(tag)::type;
+
+			return launch_metax_rope<T>(
+				reinterpret_cast<T *>(
+					out
+				),
+				reinterpret_cast<const T *>(
+					in
+				),
+				reinterpret_cast<const std::int64_t *>(
+					pos_ids
+				),
+				theta,
+				seqlen,
+				nhead,
+				d,
+				mc_stream
+			);
+		}
+	);
+}
+
+} // namespace llaisys::ops::metax

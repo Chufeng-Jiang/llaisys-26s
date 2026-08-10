@@ -1,0 +1,209 @@
+#include "../../../device/metax/metax_common.hpp"
+#include "../../../device/metax/metax_dtype.hpp"
+#include "../../../utils.hpp"
+
+#include "../cuda_compat/rms_norm_cuda_compat.cuh"
+#include "rms_norm_metax.hpp"
+
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <cstdlib>
+#include <cstdio>
+
+
+namespace {
+
+namespace cuda_compat =
+	llaisys::ops::cuda_compat;
+
+using llaisys::device::metax::dispatch_metax_dtype;
+
+// ============================================================
+// MetaX RMSNorm baseline policy
+// ============================================================
+//
+// Start from one fixed block size instead of copying the
+// NVIDIA 64/128/256-thread scheduling policy.
+//
+// This keeps the first MetaX implementation focused on
+// functional portability of:
+//
+//     shared-memory reduction
+//     FP32 accumulation
+//     scalar / Packed128 paths
+//
+// Block-size tuning should be characterized separately.
+// ============================================================
+
+inline constexpr unsigned int
+METAX_RMS_NORM_BLOCK_SIZE = 256;
+
+// ============================================================
+// MetaX launch
+// ============================================================
+
+template <typename T>
+void launch_metax_rms_norm(
+	T *out,
+	const T *in,
+	const T *weight,
+	float eps,
+	std::size_t nrow,
+	std::size_t ncol,
+	mcStream_t stream
+) {
+	CHECK_ARGUMENT(
+		nrow == 0 || out != nullptr,
+		"RMSNorm: output pointer must not be null."
+	);
+
+	CHECK_ARGUMENT(
+		nrow == 0 || in != nullptr,
+		"RMSNorm: input pointer must not be null."
+	);
+
+	CHECK_ARGUMENT(
+		nrow == 0 || weight != nullptr,
+		"RMSNorm: weight pointer must not be null."
+	);
+
+	if (nrow == 0) {
+		return;
+	}
+
+	CHECK_ARGUMENT(
+		ncol > 0,
+		"RMSNorm: row width must be greater than zero."
+	);
+
+	CHECK_ARGUMENT(
+		std::isfinite(eps)
+			&& eps >= 0.0F,
+		"RMSNorm: epsilon must be finite "
+		"and nonnegative."
+	);
+
+	CHECK_ARGUMENT(
+		ncol
+			<= std::numeric_limits<std::size_t>::max()
+				/ nrow,
+		"RMSNorm: tensor element count "
+		"overflows size_t."
+	);
+
+	// The shared kernel uses a row-level grid-stride loop.
+	//
+	// For the initial MetaX baseline, launch one block per row.
+	// Typical LLM RMSNorm workloads have a small enough nrow
+	// that no vendor-specific grid capping is needed here.
+	CHECK_ARGUMENT(
+		nrow
+			<= static_cast<std::size_t>(
+				std::numeric_limits<unsigned int>::max()
+			),
+		"RMSNorm: MetaX grid size exceeds "
+		"supported launch range."
+	);
+
+	const std::size_t grid_size =
+		nrow;
+
+	// Reuse the same portable Packed128 eligibility contract:
+	//
+	//     - complete packs per row
+	//     - 16-byte aligned out / in / weight
+	const bool use_packed_kernel =
+		cuda_compat::can_use_packed_rms_norm<T>(
+			out,
+			in,
+			weight,
+			ncol
+		);
+
+
+if (
+	std::getenv(
+		"LLAISYS_METAX_RMS_NORM_DEBUG"
+	)
+	!= nullptr
+) {
+	std::fprintf(
+		stderr,
+		"[MetaX RMSNorm] "
+		"nrow=%zu ncol=%zu "
+		"block=%u packed=%s\n",
+		nrow,
+		ncol,
+		METAX_RMS_NORM_BLOCK_SIZE,
+		use_packed_kernel
+			? "true"
+			: "false"
+	);
+}
+
+	cuda_compat::launch_rms_norm_kernel<
+		T,
+		METAX_RMS_NORM_BLOCK_SIZE
+	>(
+		out,
+		in,
+		weight,
+		eps,
+		nrow,
+		ncol,
+		grid_size,
+		use_packed_kernel,
+		stream
+	);
+
+	MC_CHECK(
+		mcGetLastError()
+	);
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void rms_norm(
+	std::byte *out,
+	const std::byte *in,
+	const std::byte *weight,
+	float eps,
+	llaisysDataType_t type,
+	std::size_t nrow,
+	std::size_t ncol,
+	llaisysStream_t stream
+) {
+	const mcStream_t mc_stream =
+		reinterpret_cast<mcStream_t>(
+			stream
+		);
+
+	return dispatch_metax_dtype(
+		type,
+		[&](auto tag) {
+			using T =
+				typename decltype(tag)::type;
+
+			return launch_metax_rms_norm<T>(
+				reinterpret_cast<T *>(
+					out
+				),
+				reinterpret_cast<const T *>(
+					in
+				),
+				reinterpret_cast<const T *>(
+					weight
+				),
+				eps,
+				nrow,
+				ncol,
+				mc_stream
+			);
+		}
+	);
+}
+
+} // namespace llaisys::ops::metax

@@ -7,6 +7,10 @@
 #include "nvidia/rms_norm_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/rms_norm_metax.hpp"
+#endif
+
 #include <cmath>
 #include <cstddef>
 
@@ -123,6 +127,29 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
             column_count,
             runtime.stream());
     }
+#endif
+
+#ifdef ENABLE_METAX_API
+	case LLAISYS_DEVICE_METAX: {
+		core::context().setDevice(
+			out->deviceType(),
+			out->deviceId()
+		);
+
+		auto &runtime =
+			core::context().runtime();
+
+		return metax::rms_norm(
+			out->data(),
+			in->data(),
+			weight->data(),
+			eps,
+			out->dtype(),
+			row_count,
+			column_count,
+			runtime.stream()
+		);
+	}
 #endif
 
     default:

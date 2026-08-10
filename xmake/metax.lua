@@ -1,9 +1,171 @@
 -- ============================================================
--- MetaX Runtime
+-- MetaX paths
+-- ============================================================
+
+local MACA_ROOT =
+	os.getenv("MACA_PATH")
+	or os.getenv("MACA_HOME")
+	or os.getenv("MACA_ROOT")
+	or "/opt/maca"
+
+local MACA_INCLUDE =
+	path.join(
+		MACA_ROOT,
+		"include"
+	)
+
+local CUDA_BRIDGE_INCLUDE =
+	path.join(
+		MACA_ROOT,
+		"tools/cu-bridge/include"
+	)
+
+local MACA_LIBRARY =
+	path.join(
+		MACA_ROOT,
+		"lib"
+	)
+
+local MXCC =
+	path.join(
+		MACA_ROOT,
+		"mxgpu_llvm/bin/mxcc"
+	)
+
+
+-- ============================================================
+-- MetaX kernel compilation rule
+-- ============================================================
+
+rule("llaisys.maca")
+	set_extensions(".maca")
+
+	on_build_file(function (
+		target,
+		sourcefile
+	)
+		if not os.isfile(MXCC) then
+			raise(
+				"MetaX mxcc compiler not found: "
+				.. MXCC
+			)
+		end
+
+		if not os.isdir(MACA_INCLUDE) then
+			raise(
+				"MetaX MACA include directory not found: "
+				.. MACA_INCLUDE
+			)
+		end
+
+		local objectfile =
+			target:objectfile(
+				sourcefile
+			)
+
+		os.mkdir(
+			path.directory(
+				objectfile
+			)
+		)
+
+		local args = {
+			"-x",
+			"maca",
+
+			"-c",
+			sourcefile,
+
+			"-o",
+			objectfile,
+
+			"-std=c++17",
+
+			"-O3",
+
+			"-fPIC",
+
+			"-offload-arch",
+			"native",
+
+			"--maca-path="
+				.. MACA_ROOT,
+
+			"-I"
+				.. CUDA_BRIDGE_INCLUDE,
+
+			"-I"
+				.. MACA_INCLUDE
+		}
+
+		--
+		-- Propagate include paths from the final target.
+		--
+		local includedirs =
+			target:get("includedirs")
+
+		if includedirs then
+			for _, includedir in ipairs(
+				includedirs
+			) do
+				table.insert(
+					args,
+					"-I"
+						.. includedir
+				)
+			end
+		end
+
+		--
+		-- Propagate target definitions, including
+		-- ENABLE_METAX_API.
+		--
+		local defines =
+			target:get("defines")
+
+		if defines then
+			for _, define in ipairs(
+				defines
+			) do
+				table.insert(
+					args,
+					"-D"
+						.. define
+				)
+			end
+		end
+
+		cprint(
+			"${cyan}MetaX compiling: %s",
+			sourcefile
+		)
+
+		os.execv(
+			MXCC,
+			args
+		)
+
+		--
+		-- Register mxcc-generated object with the target.
+		--
+		table.insert(
+			target:objectfiles(),
+			objectfile
+		)
+	end)
+rule_end()
+
+
+-- ============================================================
+-- MetaX Runtime backend
 -- ============================================================
 
 target("llaisys-device-metax")
 	set_kind("static")
+
+	add_deps(
+		"llaisys-utils"
+	)
 
 	set_languages("cxx17")
 	set_warnings("all", "error")
@@ -15,40 +177,8 @@ target("llaisys-device-metax")
 		)
 	end
 
-	local maca_path =
-		os.getenv("MACA_PATH")
-		or "/opt/maca"
-
-	local maca_include_dir =
-		path.join(
-			maca_path,
-			"include"
-		)
-
-	local maca_library_dir =
-		path.join(
-			maca_path,
-			"lib"
-		)
-
 	add_includedirs(
-		maca_include_dir,
-		{public = true}
-	)
-
-	add_linkdirs(
-		maca_library_dir,
-		{public = true}
-	)
-
-	add_links(
-		"mcruntime",
-		{public = true}
-	)
-
-	add_rpathdirs(
-		maca_library_dir,
-		{public = true}
+		MACA_INCLUDE
 	)
 
 	add_files(
@@ -56,151 +186,47 @@ target("llaisys-device-metax")
 	)
 
 	on_config(function (target)
-		if not os.isdir(maca_include_dir) then
+		if not os.isdir(MACA_INCLUDE) then
 			raise(
 				"MetaX MACA include directory not found: "
-					.. maca_include_dir
+					.. MACA_INCLUDE
 			)
 		end
 
-		if not os.isdir(maca_library_dir) then
+		if not os.isdir(MACA_LIBRARY) then
 			raise(
 				"MetaX MACA library directory not found: "
-					.. maca_library_dir
+					.. MACA_LIBRARY
+			)
+		end
+
+		if not os.isfile(MXCC) then
+			raise(
+				"MetaX mxcc compiler not found: "
+					.. MXCC
 			)
 		end
 
 		cprint(
+			"${cyan}MetaX MACA root: %s",
+			MACA_ROOT
+		)
+
+		cprint(
 			"${cyan}MetaX MACA headers: %s",
-			maca_include_dir
+			MACA_INCLUDE
 		)
 
 		cprint(
 			"${cyan}MetaX MACA libraries: %s",
-			maca_library_dir
+			MACA_LIBRARY
+		)
+
+		cprint(
+			"${cyan}MetaX compiler: %s",
+			MXCC
 		)
 	end)
-
-	on_install(function (target)
-	end)
-target_end()
-
--- ============================================================
--- MetaX kernel compilation rule
--- ============================================================
-
-rule("metax.kernel")
-	set_extensions(".maca")
-
-	on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
-		local maca_path =
-			os.getenv("MACA_PATH")
-
-		if not maca_path or #maca_path == 0 then
-			raise(
-				"MACA_PATH is not set"
-			)
-		end
-
-		local mxcc =
-			path.join(
-				maca_path,
-				"mxgpu_llvm",
-				"bin",
-				"mxcc"
-			)
-
-		local objectfile =
-			target:objectfile(
-				sourcefile
-			)
-
-		table.insert(
-			target:objectfiles(),
-			objectfile
-		)
-
-		batchcmds:show_progress(
-			opt.progress,
-			"${color.build.object}compiling.metax %s",
-			sourcefile
-		)
-
-		batchcmds:mkdir(
-			path.directory(
-				objectfile
-			)
-		)
-
-		batchcmds:vrunv(
-			mxcc,
-			{
-				"-std=c++17",
-
-				"-x",
-				"maca",
-
-				"-offload-arch",
-				"native",
-
-				"--maca-path="
-					.. maca_path,
-
-				"-DENABLE_METAX_API",
-
-				"-fPIC",
-
-				"-Iinclude",
-				"-Isrc",
-
-				"-I"
-					.. path.join(
-						maca_path,
-						"include"
-					),
-
-				"-c",
-				sourcefile,
-
-				"-o",
-				objectfile,
-			}
-		)
-
-		batchcmds:add_depfiles(
-			sourcefile
-		)
-
-		batchcmds:set_depmtime(
-			os.mtime(
-				objectfile
-			)
-		)
-
-		batchcmds:set_depcache(
-			target:dependfile(
-				objectfile
-			)
-		)
-	end)
-rule_end()
-
-
-
--- ============================================================
--- MetaX Operators
--- ============================================================
-
-target("llaisys-ops-metax")
-	set_kind("static")
-
-	add_rules(
-		"metax.kernel"
-	)
-
-	add_files(
-		"../src/ops/add/metax/*.maca"
-	)
 
 	on_install(function (target)
 	end)
