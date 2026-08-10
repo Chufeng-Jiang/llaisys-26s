@@ -2,10 +2,6 @@
 
 #include "../../cuda_compat/common.cuh"
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
-
 #include <cstddef>
 #include <type_traits>
 
@@ -18,9 +14,9 @@ namespace llaisys::ops::cuda_compat {
 template <typename T> __device__ __forceinline__ T add_value(T a, T b) {
     if constexpr (std::is_same_v<T, float>) {
         return a + b;
-    } else if constexpr (std::is_same_v<T, half>) {
+    } else if constexpr (std::is_same_v<T, fp16_t>) {
         return __hadd(a, b);
-    } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+    } else if constexpr (std::is_same_v<T, bf16_t>) {
         return __hadd(a, b);
     } else {
         static_assert(DEPENDENT_FALSE<T>, "Unsupported CUDA-compatible Add data type.");
@@ -64,18 +60,18 @@ template <> struct VectorTraits<float> {
     static constexpr std::size_t ALIGNMENT = alignof(float4);
 };
 
-template <> struct VectorTraits<half> {
+template <> struct VectorTraits<fp16_t> {
     // 8 FP16 values = 16 bytes.
     static constexpr std::size_t ELEMENTS = 8;
 
-    static constexpr std::size_t ALIGNMENT = alignof(half2);
+    static constexpr std::size_t ALIGNMENT = alignof(fp16x2_t);
 };
 
-template <> struct VectorTraits<__nv_bfloat16> {
+template <> struct VectorTraits<bf16_t> {
     // 8 BF16 values = 16 bytes.
     static constexpr std::size_t ELEMENTS = 8;
 
-    static constexpr std::size_t ALIGNMENT = alignof(__nv_bfloat162);
+    static constexpr std::size_t ALIGNMENT = alignof(bf16x2_t);
 };
 
 // ============================================================
@@ -145,26 +141,26 @@ __global__ void add_kernel_vectorized(
 
             *reinterpret_cast<float4 *>(c + element_index) = c_vector;
 
-        } else if constexpr (std::is_same_v<T, half>) {
-            const half2 *const a_vector = reinterpret_cast<const half2 *>(a + element_index);
+        } else if constexpr (std::is_same_v<T, fp16_t>) {
+            const fp16x2_t *const a_vector = reinterpret_cast<const fp16x2_t *>(a + element_index);
 
-            const half2 *const b_vector = reinterpret_cast<const half2 *>(b + element_index);
+            const fp16x2_t *const b_vector = reinterpret_cast<const fp16x2_t *>(b + element_index);
 
-            half2 *const c_vector = reinterpret_cast<half2 *>(c + element_index);
+            fp16x2_t *const c_vector = reinterpret_cast<fp16x2_t *>(c + element_index);
 
 #pragma unroll
             for (int pair = 0; pair < 4; ++pair) {
                 c_vector[pair] = __hadd2(a_vector[pair], b_vector[pair]);
             }
 
-        } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-            const __nv_bfloat162 *const a_vector
-                = reinterpret_cast<const __nv_bfloat162 *>(a + element_index);
+        } else if constexpr (std::is_same_v<T, bf16_t>) {
+            const bf16x2_t *const a_vector
+                = reinterpret_cast<const bf16x2_t *>(a + element_index);
 
-            const __nv_bfloat162 *const b_vector
-                = reinterpret_cast<const __nv_bfloat162 *>(b + element_index);
+            const bf16x2_t *const b_vector
+                = reinterpret_cast<const bf16x2_t *>(b + element_index);
 
-            __nv_bfloat162 *const c_vector = reinterpret_cast<__nv_bfloat162 *>(c + element_index);
+            bf16x2_t *const c_vector = reinterpret_cast<bf16x2_t *>(c + element_index);
 
 #pragma unroll
             for (int pair = 0; pair < 4; ++pair) {

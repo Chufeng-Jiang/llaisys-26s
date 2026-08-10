@@ -118,57 +118,116 @@ target("llaisys-tensor")
 target_end()
 
 target("llaisys-ops")
-    set_kind("static")
-    add_deps("llaisys-ops-cpu")
+	set_kind("static")
+	add_deps("llaisys-ops-cpu")
 
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    if not is_plat("windows") then
-        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
-    end
-    if has_config("nv-gpu") then
-        add_deps("llaisys-ops-nvidia")
-    end
+	set_languages("cxx17")
+	set_warnings("all", "error")
 
-    add_files("src/ops/*/*.cpp")
+	if not is_plat("windows") then
+		add_cxflags(
+			"-fPIC",
+			"-Wno-unknown-pragmas"
+		)
+	end
 
-    on_install(function (target) end)
+	if has_config("nv-gpu") then
+		add_deps("llaisys-ops-nvidia")
+	end
+
+	if has_config("metax-gpu") then
+		add_deps("llaisys-ops-metax")
+
+		-- Merge CPU + MetaX operator archives into
+		-- libllaisys-ops.a.
+		set_policy(
+			"build.merge_archive",
+			true
+		)
+	end
+
+	add_files("src/ops/*/*.cpp")
+
+	on_install(function (target)
+	end)
 target_end()
+
 
 target("llaisys")
-    set_kind("shared")
-    add_deps("llaisys-utils")
-    add_deps("llaisys-device")
-    add_deps("llaisys-core")
-    add_deps("llaisys-tensor")
-    add_deps("llaisys-ops")
+	set_kind("shared")
 
-    set_languages("cxx17")
-    set_warnings("all", "error")
+	add_deps("llaisys-utils")
+	add_deps("llaisys-device")
+	add_deps("llaisys-core")
+	add_deps("llaisys-tensor")
+	add_deps("llaisys-ops")
 
-    if is_plat("linux") then
-	    add_ldflags("-Wl,--no-undefined", {force = true})
-    end
+	set_languages("cxx17")
+	set_warnings("all", "error")
 
-    add_files("src/llaisys/*.cc")
-    add_files("src/llaisys/**/*.cc")
-    add_files("src/models/*.cpp")
+	if has_config("metax-gpu") then
+		local maca_path =
+			os.getenv("MACA_PATH")
+			or "/opt/maca"
 
-    set_installdir(".")
+		add_linkdirs(
+			path.join(
+				maca_path,
+				"lib"
+			)
+		)
 
-    
-    after_install(function (target)
-        -- copy shared library to python package
-        print("Copying llaisys to python/llaisys/libllaisys/ ..")
-        if is_plat("windows") then
-            os.cp("bin/*.dll", "python/llaisys/libllaisys/")
-        end
-        if is_plat("linux") then
-            os.cp("lib/*.so", "python/llaisys/libllaisys/")
-        end
-    end)
+		add_rpathdirs(
+			path.join(
+				maca_path,
+				"lib"
+			)
+		)
+	end
+
+	if is_plat("linux") then
+		if has_config("metax-gpu") then
+			add_shflags(
+				"-Wl,--no-as-needed",
+				"-lmccompiler",
+				"-Wl,--as-needed",
+				{force = true}
+			)
+		end
+
+		add_shflags(
+			"-Wl,--no-undefined",
+			{force = true}
+		)
+	end
+
+	add_files("src/llaisys/*.cc")
+	add_files("src/llaisys/**/*.cc")
+	add_files("src/models/*.cpp")
+
+	set_installdir(".")
+
+	after_install(function (target)
+		print(
+			"Copying llaisys to "
+			.. "python/llaisys/libllaisys/ .."
+		)
+
+		if is_plat("windows") then
+			os.cp(
+				"bin/*.dll",
+				"python/llaisys/libllaisys/"
+			)
+		end
+
+		if is_plat("linux") then
+			os.cp(
+				"lib/*.so",
+				"python/llaisys/libllaisys/"
+			)
+		end
+	end)
 target_end()
-
 
 target("test-context-device-switch")
     set_kind("binary")

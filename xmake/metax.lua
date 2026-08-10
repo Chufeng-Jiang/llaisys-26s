@@ -84,3 +84,124 @@ target("llaisys-device-metax")
 	on_install(function (target)
 	end)
 target_end()
+
+-- ============================================================
+-- MetaX kernel compilation rule
+-- ============================================================
+
+rule("metax.kernel")
+	set_extensions(".maca")
+
+	on_buildcmd_file(function (target, batchcmds, sourcefile, opt)
+		local maca_path =
+			os.getenv("MACA_PATH")
+
+		if not maca_path or #maca_path == 0 then
+			raise(
+				"MACA_PATH is not set"
+			)
+		end
+
+		local mxcc =
+			path.join(
+				maca_path,
+				"mxgpu_llvm",
+				"bin",
+				"mxcc"
+			)
+
+		local objectfile =
+			target:objectfile(
+				sourcefile
+			)
+
+		table.insert(
+			target:objectfiles(),
+			objectfile
+		)
+
+		batchcmds:show_progress(
+			opt.progress,
+			"${color.build.object}compiling.metax %s",
+			sourcefile
+		)
+
+		batchcmds:mkdir(
+			path.directory(
+				objectfile
+			)
+		)
+
+		batchcmds:vrunv(
+			mxcc,
+			{
+				"-std=c++17",
+
+				"-x",
+				"maca",
+
+				"-offload-arch",
+				"native",
+
+				"--maca-path="
+					.. maca_path,
+
+				"-DENABLE_METAX_API",
+
+				"-fPIC",
+
+				"-Iinclude",
+				"-Isrc",
+
+				"-I"
+					.. path.join(
+						maca_path,
+						"include"
+					),
+
+				"-c",
+				sourcefile,
+
+				"-o",
+				objectfile,
+			}
+		)
+
+		batchcmds:add_depfiles(
+			sourcefile
+		)
+
+		batchcmds:set_depmtime(
+			os.mtime(
+				objectfile
+			)
+		)
+
+		batchcmds:set_depcache(
+			target:dependfile(
+				objectfile
+			)
+		)
+	end)
+rule_end()
+
+
+
+-- ============================================================
+-- MetaX Operators
+-- ============================================================
+
+target("llaisys-ops-metax")
+	set_kind("static")
+
+	add_rules(
+		"metax.kernel"
+	)
+
+	add_files(
+		"../src/ops/add/metax/*.maca"
+	)
+
+	on_install(function (target)
+	end)
+target_end()
