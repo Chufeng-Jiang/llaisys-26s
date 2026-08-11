@@ -1,0 +1,779 @@
+#include <mcr/mc_runtime_api.h>
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+
+
+inline constexpr unsigned int TEST_BLOCK_SIZE = 256;
+
+inline constexpr unsigned int EXPECTED_WARP_SIZE = 32;
+
+inline constexpr unsigned int MAX_WARPS_PER_BLOCK =
+	TEST_BLOCK_SIZE / EXPECTED_WARP_SIZE;
+
+inline constexpr std::uint32_t INVALID_INDEX =
+	std::numeric_limits<std::uint32_t>::max();
+
+inline constexpr unsigned int FULL_WARP_MASK =
+	0xFFFFFFFFU;
+
+
+struct ArgmaxResult {
+	float value;
+	std::uint32_t index;
+};
+
+
+__host__ __device__
+constexpr ArgmaxResult invalid_argmax_result() {
+	return ArgmaxResult{
+		0.0F,
+		INVALID_INDEX,
+	};
+}
+
+
+__host__ __device__
+constexpr bool is_valid_argmax_result(
+	const ArgmaxResult &result
+) {
+	return result.index != INVALID_INDEX;
+}
+
+
+__device__ __forceinline__
+bool is_better_argmax(
+	float candidate_value,
+	std::uint32_t candidate_index,
+	float current_value,
+	std::uint32_t current_index
+) {
+	const bool candidate_nan =
+		isnan(candidate_value);
+
+	const bool current_nan =
+		isnan(current_value);
+
+	// NaN wins over non-NaN.
+	if (
+		candidate_nan
+		!= current_nan
+	) {
+		return
+			candidate_nan;
+	}
+
+	// Larger numerical value wins.
+	if (
+		candidate_value
+		> current_value
+	) {
+		return true;
+	}
+
+	if (
+		candidate_value
+		< current_value
+	) {
+		return false;
+	}
+
+	// Equal values:
+	// smaller index wins.
+	return
+		candidate_index
+		< current_index;
+}
+
+
+__device__ __forceinline__
+void update_argmax_result(
+	ArgmaxResult &result,
+	float candidate_value,
+	std::uint32_t candidate_index
+) {
+	if (
+		!is_valid_argmax_result(
+			result
+		)
+		|| is_better_argmax(
+			candidate_value,
+			candidate_index,
+			result.value,
+			result.index
+		)
+	) {
+		result.value =
+			candidate_value;
+
+		result.index =
+			candidate_index;
+	}
+}
+
+
+// ============================================================
+// Device warp-size probe
+// ============================================================
+
+__global__
+void warp_size_probe_kernel(
+	int *output
+) {
+	if (
+		blockIdx.x == 0
+		&& threadIdx.x == 0
+	) {
+		*output =
+			warpSize;
+	}
+}
+
+
+// ============================================================
+// NVIDIA-style warp reduction
+// ============================================================
+//
+// This deliberately matches the NVIDIA mechanism:
+//
+//     __shfl_down_sync
+//     32-lane warp
+//
+// We are testing whether that mechanism itself is portable to
+// MetaX before integrating it into the production operator.
+// ============================================================
+
+__device__ __forceinline__
+ArgmaxResult warp_reduce_argmax_shuffle(
+	ArgmaxResult result
+) {
+#pragma unroll
+	for (
+		int offset =
+			static_cast<int>(
+				EXPECTED_WARP_SIZE / 2
+			);
+		offset > 0;
+		offset >>= 1
+	) {
+		const float other_value =
+			__shfl_down_sync(
+				FULL_WARP_MASK,
+				result.value,
+				offset
+			);
+
+		const std::uint32_t other_index =
+			__shfl_down_sync(
+				FULL_WARP_MASK,
+				result.index,
+				offset
+			);
+
+		if (
+			other_index
+			!= INVALID_INDEX
+		) {
+			update_argmax_result(
+				result,
+				other_value,
+				other_index
+			);
+		}
+	}
+
+	return result;
+}
+
+
+// ============================================================
+// NVIDIA-style two-level block reduction
+// ============================================================
+
+__device__ __forceinline__
+ArgmaxResult block_reduce_argmax_shuffle(
+	ArgmaxResult thread_result,
+	ArgmaxResult *warp_results
+) {
+	const unsigned int lane_id =
+		threadIdx.x
+		& (
+			EXPECTED_WARP_SIZE - 1U
+		);
+
+	const unsigned int warp_id =
+		threadIdx.x
+		/ EXPECTED_WARP_SIZE;
+
+	const unsigned int num_warps =
+		(
+			blockDim.x
+			+ EXPECTED_WARP_SIZE
+			- 1U
+		)
+		/ EXPECTED_WARP_SIZE;
+
+	// --------------------------------------------------------
+	// Level 1:
+	// reduce inside each warp.
+	// --------------------------------------------------------
+
+	thread_result =
+		warp_reduce_argmax_shuffle(
+			thread_result
+		);
+
+	// --------------------------------------------------------
+	// Warp leader writes one result.
+	// --------------------------------------------------------
+
+	if (
+		lane_id == 0
+	) {
+		warp_results[
+			warp_id
+		] = thread_result;
+	}
+
+	__syncthreads();
+
+	// --------------------------------------------------------
+	// Level 2:
+	// first warp reduces warp-level results.
+	// --------------------------------------------------------
+
+	ArgmaxResult block_result =
+		invalid_argmax_result();
+
+	if (
+		warp_id == 0
+	) {
+		if (
+			lane_id
+			< num_warps
+		) {
+			block_result =
+				warp_results[
+					lane_id
+				];
+		}
+
+		block_result =
+			warp_reduce_argmax_shuffle(
+				block_result
+			);
+	}
+
+	return
+		block_result;
+}
+
+
+// ============================================================
+// Test kernel
+// ============================================================
+
+__global__
+void argmax_shuffle_test_kernel(
+	ArgmaxResult *output,
+	const float *input,
+	std::size_t numel
+) {
+	__shared__
+	ArgmaxResult warp_results[
+		MAX_WARPS_PER_BLOCK
+	];
+
+	ArgmaxResult thread_result =
+		invalid_argmax_result();
+
+	for (
+		std::size_t index =
+			static_cast<std::size_t>(
+				threadIdx.x
+			);
+		index < numel;
+		index += static_cast<std::size_t>(
+			blockDim.x
+		)
+	) {
+		update_argmax_result(
+			thread_result,
+			input[index],
+			static_cast<std::uint32_t>(
+				index
+			)
+		);
+	}
+
+	const ArgmaxResult block_result =
+		block_reduce_argmax_shuffle(
+			thread_result,
+			warp_results
+		);
+
+	if (
+		threadIdx.x == 0
+	) {
+		*output =
+			block_result;
+	}
+}
+
+
+// ============================================================
+// MACA error helper
+// ============================================================
+
+void check_mc(
+	mcError_t status,
+	const char *what
+) {
+	if (
+		status == mcSuccess
+	) {
+		return;
+	}
+
+	std::fprintf(
+		stderr,
+		"MACA error at %s: %s\n",
+		what,
+		mcGetErrorString(
+			status
+		)
+	);
+
+	std::exit(1);
+}
+
+
+// ============================================================
+// One correctness case
+// ============================================================
+
+void run_case(
+	const char *name,
+	const float *host_input,
+	std::size_t numel,
+	float expected_value,
+	std::uint32_t expected_index
+) {
+	float *device_input =
+		nullptr;
+
+	ArgmaxResult *device_output =
+		nullptr;
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&device_input
+			),
+			numel * sizeof(float)
+		),
+		"mcMalloc input"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&device_output
+			),
+			sizeof(ArgmaxResult)
+		),
+		"mcMalloc output"
+	);
+
+	check_mc(
+		mcMemcpy(
+			device_input,
+			host_input,
+			numel * sizeof(float),
+			mcMemcpyHostToDevice
+		),
+		"mcMemcpy input H2D"
+	);
+
+	argmax_shuffle_test_kernel
+		<<<
+			1,
+			TEST_BLOCK_SIZE
+		>>>(
+			device_output,
+			device_input,
+			numel
+		);
+
+	check_mc(
+		mcGetLastError(),
+		"argmax shuffle kernel launch"
+	);
+
+	check_mc(
+		mcDeviceSynchronize(),
+		"argmax shuffle synchronize"
+	);
+
+	ArgmaxResult host_output{};
+
+	check_mc(
+		mcMemcpy(
+			&host_output,
+			device_output,
+			sizeof(ArgmaxResult),
+			mcMemcpyDeviceToHost
+		),
+		"mcMemcpy output D2H"
+	);
+
+	const bool value_ok =
+		(
+			std::isnan(
+				expected_value
+			)
+			&& std::isnan(
+				host_output.value
+			)
+		)
+		|| (
+			host_output.value
+			== expected_value
+		);
+
+	const bool index_ok =
+		host_output.index
+		== expected_index;
+
+	std::printf(
+		"%-28s "
+		"value=%f "
+		"index=%u "
+		"expected_index=%u "
+		"%s\n",
+		name,
+		host_output.value,
+		host_output.index,
+		expected_index,
+		(
+			value_ok
+			&& index_ok
+		)
+			? "PASS"
+			: "FAIL"
+	);
+
+	if (
+		!value_ok
+		|| !index_ok
+	) {
+		std::exit(2);
+	}
+
+	check_mc(
+		mcFree(
+			device_input
+		),
+		"mcFree input"
+	);
+
+	check_mc(
+		mcFree(
+			device_output
+		),
+		"mcFree output"
+	);
+}
+
+
+// ============================================================
+// Main
+// ============================================================
+
+int main() {
+	check_mc(
+		mcSetDevice(0),
+		"mcSetDevice"
+	);
+
+	// --------------------------------------------------------
+	// Step 1:
+	// explicitly probe MetaX warpSize.
+	// --------------------------------------------------------
+
+	int *device_warp_size =
+		nullptr;
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&device_warp_size
+			),
+			sizeof(int)
+		),
+		"mcMalloc warp size"
+	);
+
+	warp_size_probe_kernel
+		<<<1, 1>>>(
+			device_warp_size
+		);
+
+	check_mc(
+		mcGetLastError(),
+		"warp size probe launch"
+	);
+
+	check_mc(
+		mcDeviceSynchronize(),
+		"warp size probe synchronize"
+	);
+
+	int host_warp_size =
+		0;
+
+	check_mc(
+		mcMemcpy(
+			&host_warp_size,
+			device_warp_size,
+			sizeof(int),
+			mcMemcpyDeviceToHost
+		),
+		"mcMemcpy warp size"
+	);
+
+	check_mc(
+		mcFree(
+			device_warp_size
+		),
+		"mcFree warp size"
+	);
+
+	std::printf(
+		"MetaX reported warpSize = %d\n",
+		host_warp_size
+	);
+
+	if (
+		host_warp_size
+		!= static_cast<int>(
+			EXPECTED_WARP_SIZE
+		)
+	) {
+		std::fprintf(
+			stderr,
+			"FAIL: NVIDIA-compatible path assumes "
+			"warpSize=32, but MetaX reported %d.\n",
+			host_warp_size
+		);
+
+		return 3;
+	}
+
+	std::printf(
+		"warpSize compatibility: PASS\n\n"
+	);
+
+	// --------------------------------------------------------
+	// Basic
+	// --------------------------------------------------------
+
+	{
+		const float input[] = {
+			1.0F,
+			4.0F,
+			2.0F,
+			3.0F,
+		};
+
+		run_case(
+			"normal",
+			input,
+			4,
+			4.0F,
+			1
+		);
+	}
+
+	// --------------------------------------------------------
+	// Same-warp duplicate maximum
+	// --------------------------------------------------------
+
+	{
+		float input[32];
+
+		for (
+			std::size_t i = 0;
+			i < 32;
+			++i
+		) {
+			input[i] =
+				static_cast<float>(
+					i
+				);
+		}
+
+		input[5] =
+			1000.0F;
+
+		input[27] =
+			1000.0F;
+
+		run_case(
+			"same_warp_duplicate",
+			input,
+			32,
+			1000.0F,
+			5
+		);
+	}
+
+	// --------------------------------------------------------
+	// Cross-warp duplicate maximum
+	// --------------------------------------------------------
+
+	{
+		float input[256];
+
+		for (
+			std::size_t i = 0;
+			i < 256;
+			++i
+		) {
+			input[i] =
+				static_cast<float>(
+					i
+				);
+		}
+
+		input[17] =
+			10000.0F;
+
+		input[200] =
+			10000.0F;
+
+		run_case(
+			"cross_warp_duplicate",
+			input,
+			256,
+			10000.0F,
+			17
+		);
+	}
+
+	// --------------------------------------------------------
+	// NaN in one warp
+	// --------------------------------------------------------
+
+	{
+		float input[32];
+
+		for (
+			std::size_t i = 0;
+			i < 32;
+			++i
+		) {
+			input[i] =
+				static_cast<float>(
+					i
+				);
+		}
+
+		input[9] =
+			NAN;
+
+		run_case(
+			"single_nan",
+			input,
+			32,
+			NAN,
+			9
+		);
+	}
+
+	// --------------------------------------------------------
+	// NaNs across different warps.
+	// Smaller index must win.
+	// --------------------------------------------------------
+
+	{
+		float input[256];
+
+		for (
+			std::size_t i = 0;
+			i < 256;
+			++i
+		) {
+			input[i] =
+				static_cast<float>(
+					i
+				);
+		}
+
+		input[50] =
+			NAN;
+
+		input[180] =
+			NAN;
+
+		run_case(
+			"cross_warp_nan",
+			input,
+			256,
+			NAN,
+			50
+		);
+	}
+
+	// --------------------------------------------------------
+	// Grid-stride-like local scan:
+	// > one element per thread.
+	// --------------------------------------------------------
+
+	{
+		constexpr std::size_t N =
+			4096;
+
+		float *input =
+			new float[N];
+
+		for (
+			std::size_t i = 0;
+			i < N;
+			++i
+		) {
+			input[i] =
+				static_cast<float>(
+					i
+				);
+		}
+
+		input[123] =
+			100000.0F;
+
+		input[3000] =
+			100000.0F;
+
+		run_case(
+			"large_duplicate",
+			input,
+			N,
+			100000.0F,
+			123
+		);
+
+		delete[] input;
+	}
+
+	std::printf(
+		"\n"
+		"All MetaX NVIDIA-style shuffle "
+		"Argmax tests passed!\n"
+	);
+
+	return 0;
+}

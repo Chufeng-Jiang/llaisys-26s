@@ -1,0 +1,186 @@
+#include <mcr/mc_runtime_api.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+
+void check_mc(
+	mcError_t status,
+	const char *what
+) {
+	if (status == mcSuccess) {
+		return;
+	}
+
+	std::fprintf(
+		stderr,
+		"MACA error at %s: %s\n",
+		what,
+		mcGetErrorString(status)
+	);
+
+	std::exit(1);
+}
+
+
+__global__
+void atomiccas64_kernel(
+	unsigned long long *value,
+	unsigned long long *success_count
+) {
+	const unsigned long long tid =
+		static_cast<unsigned long long>(
+			blockIdx.x
+		)
+		* static_cast<unsigned long long>(
+			blockDim.x
+		)
+		+ static_cast<unsigned long long>(
+			threadIdx.x
+		);
+
+	const unsigned long long desired =
+		tid + 1ULL;
+
+	unsigned long long observed =
+		atomicCAS(
+			value,
+			0ULL,
+			desired
+		);
+
+	if (observed == 0ULL) {
+		atomicAdd(
+			success_count,
+			1ULL
+		);
+	}
+}
+
+
+int main() {
+	check_mc(
+		mcSetDevice(0),
+		"mcSetDevice"
+	);
+
+	unsigned long long *d_value =
+		nullptr;
+
+	unsigned long long *d_success =
+		nullptr;
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_value
+			),
+			sizeof(unsigned long long)
+		),
+		"mcMalloc value"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_success
+			),
+			sizeof(unsigned long long)
+		),
+		"mcMalloc success"
+	);
+
+	check_mc(
+		mcMemset(
+			d_value,
+			0,
+			sizeof(unsigned long long)
+		),
+		"mcMemset value"
+	);
+
+	check_mc(
+		mcMemset(
+			d_success,
+			0,
+			sizeof(unsigned long long)
+		),
+		"mcMemset success"
+	);
+
+	atomiccas64_kernel
+		<<<256, 256>>>(
+			d_value,
+			d_success
+		);
+
+	check_mc(
+		mcGetLastError(),
+		"atomicCAS64 launch"
+	);
+
+	check_mc(
+		mcDeviceSynchronize(),
+		"atomicCAS64 synchronize"
+	);
+
+	unsigned long long h_value =
+		0;
+
+	unsigned long long h_success =
+		0;
+
+	check_mc(
+		mcMemcpy(
+			&h_value,
+			d_value,
+			sizeof(unsigned long long),
+			mcMemcpyDeviceToHost
+		),
+		"copy value"
+	);
+
+	check_mc(
+		mcMemcpy(
+			&h_success,
+			d_success,
+			sizeof(unsigned long long),
+			mcMemcpyDeviceToHost
+		),
+		"copy success"
+	);
+
+	std::printf(
+		"final value   = %llu\n",
+		h_value
+	);
+
+	std::printf(
+		"success count = %llu\n",
+		h_success
+	);
+
+	const bool pass =
+		h_value != 0ULL
+		&& h_success == 1ULL;
+
+	std::printf(
+		"\n64-bit atomicCAS: %s\n",
+		pass
+			? "PASS"
+			: "FAIL"
+	);
+
+	check_mc(
+		mcFree(d_value),
+		"free value"
+	);
+
+	check_mc(
+		mcFree(d_success),
+		"free success"
+	);
+
+	return pass ? 0 : 1;
+}

@@ -9,6 +9,10 @@
 #include "nvidia/rearrange_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/rearrange_metax.hpp"
+#endif
+
 #include <cstddef>
 
 namespace llaisys::ops {
@@ -58,6 +62,25 @@ void rearrange(tensor_t out, tensor_t in) {
         auto &runtime = core::context().runtime();
 
         return nvidia::rearrange(
+            out->data(),
+            in->data(),
+            out->dtype(),
+            numel,
+            out->shape(),
+            out->strides(),
+            in->shape(),
+            in->strides(),
+            runtime.stream());
+    }
+#endif
+
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX: {
+        core::context().setDevice(out->deviceType(), out->deviceId());
+
+        auto &runtime = core::context().runtime();
+
+        return metax::rearrange(
             out->data(),
             in->data(),
             out->dtype(),

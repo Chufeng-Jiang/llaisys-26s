@@ -1,0 +1,263 @@
+#include <cub/block/block_reduce.cuh>
+#include <mc_runtime.h>
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
+constexpr int BLOCK_SIZE = 256;
+
+#define MC_CHECK(call)                                                   \
+	do {                                                                 \
+		mcError_t err__ = (call);                                        \
+		if (err__ != mcSuccess) {                                        \
+			std::fprintf(                                                \
+				stderr,                                                  \
+				"MACA error at %s:%d: %s\n",                             \
+				__FILE__,                                                \
+				__LINE__,                                                \
+				mcGetErrorString(err__)                                  \
+			);                                                           \
+			std::exit(EXIT_FAILURE);                                     \
+		}                                                                \
+	} while (0)
+
+// ============================================================
+// CUB BlockReduce kernel
+// ============================================================
+
+__global__ void cub_block_reduce_sum(
+	const float *input,
+	float *output
+) {
+	using BlockReduce =
+		cub::BlockReduce<
+			float,
+			BLOCK_SIZE
+		>;
+
+	__shared__
+	typename BlockReduce::TempStorage temp_storage;
+
+	const int tid =
+		static_cast<int>(
+			threadIdx.x
+		);
+
+	const float value =
+		input[tid];
+
+	const float sum =
+		BlockReduce(
+			temp_storage
+		).Sum(
+			value
+		);
+
+	if (tid == 0) {
+		output[0] =
+			sum;
+	}
+}
+
+// ============================================================
+// Host
+// ============================================================
+
+int main() {
+	std::printf(
+		"MetaX CUB BlockReduce correctness test\n"
+	);
+
+	std::printf(
+		"Block size: %d\n",
+		BLOCK_SIZE
+	);
+
+	// --------------------------------------------------------
+	// Host input
+	//
+	// input:
+	//     1, 2, 3, ..., 256
+	//
+	// expected:
+	//     256 * 257 / 2
+	//     = 32896
+	// --------------------------------------------------------
+
+	float *h_input =
+		static_cast<float *>(
+			std::malloc(
+				BLOCK_SIZE
+				* sizeof(float)
+			)
+		);
+
+	if (h_input == nullptr) {
+		std::fprintf(
+			stderr,
+			"Failed to allocate host input.\n"
+		);
+
+		return EXIT_FAILURE;
+	}
+
+	for (
+		int i = 0;
+		i < BLOCK_SIZE;
+		++i
+	) {
+		h_input[i] =
+			static_cast<float>(
+				i + 1
+			);
+	}
+
+	float h_output =
+		0.0F;
+
+	const float expected =
+		static_cast<float>(
+			BLOCK_SIZE
+			* (BLOCK_SIZE + 1)
+			/ 2
+		);
+
+	// --------------------------------------------------------
+	// Device allocation
+	// --------------------------------------------------------
+
+	float *d_input =
+		nullptr;
+
+	float *d_output =
+		nullptr;
+
+	MC_CHECK(
+		mcMalloc(
+			&d_input,
+			BLOCK_SIZE
+				* sizeof(float)
+		)
+	);
+
+	MC_CHECK(
+		mcMalloc(
+			&d_output,
+			sizeof(float)
+		)
+	);
+
+	// --------------------------------------------------------
+	// H2D
+	// --------------------------------------------------------
+
+	MC_CHECK(
+		mcMemcpy(
+			d_input,
+			h_input,
+			BLOCK_SIZE
+				* sizeof(float),
+			mcMemcpyHostToDevice
+		)
+	);
+
+	MC_CHECK(
+		mcMemset(
+			d_output,
+			0,
+			sizeof(float)
+		)
+	);
+
+	// --------------------------------------------------------
+	// Kernel launch
+	// --------------------------------------------------------
+
+	std::printf(
+		"Launching cub::BlockReduce...\n"
+	);
+
+	cub_block_reduce_sum<<<1, BLOCK_SIZE>>>(
+		d_input,
+		d_output
+	);
+
+	MC_CHECK(
+		mcGetLastError()
+	);
+
+	MC_CHECK(
+		mcDeviceSynchronize()
+	);
+
+	// --------------------------------------------------------
+	// D2H
+	// --------------------------------------------------------
+
+	MC_CHECK(
+		mcMemcpy(
+			&h_output,
+			d_output,
+			sizeof(float),
+			mcMemcpyDeviceToHost
+		)
+	);
+
+	// --------------------------------------------------------
+	// Verification
+	// --------------------------------------------------------
+
+	std::printf(
+		"GPU result : %.1f\n",
+		h_output
+	);
+
+	std::printf(
+		"Expected   : %.1f\n",
+		expected
+	);
+
+	const bool passed =
+		std::fabs(
+			h_output
+			- expected
+		)
+		< 1.0e-5F;
+
+	if (passed) {
+		std::printf(
+			"\n"
+			"CUB BlockReduce correctness PASSED\n"
+		);
+	} else {
+		std::printf(
+			"\n"
+			"CUB BlockReduce correctness FAILED\n"
+		);
+	}
+
+	// --------------------------------------------------------
+	// Cleanup
+	// --------------------------------------------------------
+
+	MC_CHECK(
+		mcFree(
+			d_input
+		)
+	);
+
+	MC_CHECK(
+		mcFree(
+			d_output
+		)
+	);
+
+	std::free(
+		h_input
+	);
+
+	return passed
+		? EXIT_SUCCESS
+		: EXIT_FAILURE;
+}

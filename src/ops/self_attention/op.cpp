@@ -7,6 +7,10 @@
 #include "nvidia/self_attention_nvidia.cuh"
 #endif
 
+#ifdef ENABLE_METAX_API
+#include "metax/self_attention_metax.hpp"
+#endif
+
 #include <cmath>
 #include <cstddef>
 
@@ -224,6 +228,33 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         auto &runtime = core::context().runtime();
 
         return nvidia::self_attention(
+            attn_val->data(),
+            q->data(),
+            k->data(),
+            v->data(),
+            scale,
+            attn_val->dtype(),
+            seqlen,
+            nhead,
+            dv,
+            total_len,
+            nkvhead,
+            d,
+            runtime.stream());
+    }
+#endif
+
+#ifdef ENABLE_METAX_API
+    case LLAISYS_DEVICE_METAX: {
+        // Select the tensor's MetaX device before obtaining the
+        // device-specific Runtime and stream.
+        core::context().setDevice(
+            attn_val->deviceType(),
+            attn_val->deviceId());
+
+        auto &runtime = core::context().runtime();
+
+        return metax::self_attention(
             attn_val->data(),
             q->data(),
             k->data(),
