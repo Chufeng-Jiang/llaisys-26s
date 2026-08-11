@@ -24,22 +24,15 @@ def random_tensor(
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(
-        llaisys_device(device_name)
-    )
+    api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
-    bytes_ = (
-        torch_tensor.numel()
-        * torch_tensor.element_size()
-    )
+    bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        torch_to_llaisys_memcpy_kind(
-            device_name
-        ),
+        torch_to_llaisys_memcpy_kind(device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -71,22 +64,15 @@ def random_int_tensor(
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(
-        llaisys_device(device_name)
-    )
+    api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
-    bytes_ = (
-        torch_tensor.numel()
-        * torch_tensor.element_size()
-    )
+    bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        torch_to_llaisys_memcpy_kind(
-            device_name
-        ),
+        torch_to_llaisys_memcpy_kind(device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -114,22 +100,15 @@ def zero_tensor(
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(
-        llaisys_device(device_name)
-    )
+    api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
-    bytes_ = (
-        torch_tensor.numel()
-        * torch_tensor.element_size()
-    )
+    bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        torch_to_llaisys_memcpy_kind(
-            device_name
-        ),
+        torch_to_llaisys_memcpy_kind(device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -157,22 +136,15 @@ def arrange_tensor(
         device_id=device_id,
     )
 
-    api = llaisys.RuntimeAPI(
-        llaisys_device(device_name)
-    )
+    api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
-    bytes_ = (
-        torch_tensor.numel()
-        * torch_tensor.element_size()
-    )
+    bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
         llaisys_tensor.data_ptr(),
         torch_tensor.data_ptr(),
         bytes_,
-        torch_to_llaisys_memcpy_kind(
-            device_name
-        ),
+        torch_to_llaisys_memcpy_kind(device_name),
     )
 
     return torch_tensor, llaisys_tensor
@@ -190,32 +162,17 @@ def check_equal(
 
     assert shape == torch_answer.shape
 
-    assert (
-        torch_dtype(
-            dtype_name(
-                llaisys_result.dtype()
-            )
-        )
-        == torch_answer.dtype
-    )
+    assert torch_dtype(dtype_name(llaisys_result.dtype())) == torch_answer.dtype
 
     right = 0
 
     for i in range(len(shape)):
         if strides[i] > 0:
-            right += (
-                strides[i]
-                * (shape[i] - 1)
-            )
+            right += strides[i] * (shape[i] - 1)
         else:
-            raise ValueError(
-                "Negative strides are not "
-                "supported yet"
-            )
+            raise ValueError("Negative strides are not " "supported yet")
 
-    result_device_name = device_name(
-        llaisys_result.device_type()
-    )
+    result_device_name = device_name(llaisys_result.device_type())
 
     tmp = torch.zeros(
         (right + 1,),
@@ -232,18 +189,13 @@ def check_equal(
         strides,
     )
 
-    api = llaisys.RuntimeAPI(
-        llaisys_result.device_type()
-    )
+    api = llaisys.RuntimeAPI(llaisys_result.device_type())
 
     api.memcpy_sync(
         result.data_ptr(),
         llaisys_result.data_ptr(),
-        (right + 1)
-        * tmp.element_size(),
-        llaisys_to_torch_memcpy_kind(
-            llaisys_result.device_type()
-        ),
+        (right + 1) * tmp.element_size(),
+        llaisys_to_torch_memcpy_kind(llaisys_result.device_type()),
     )
 
     # ========================================================
@@ -251,9 +203,7 @@ def check_equal(
     # ========================================================
 
     if strict:
-        mismatch_mask = (
-            result != torch_answer
-        )
+        mismatch_mask = result != torch_answer
 
         if not torch.any(mismatch_mask):
             return True
@@ -275,63 +225,32 @@ def check_equal(
     # Diagnostic representation
     # ========================================================
 
-    result_f32 = result.to(
-        torch.float32
-    )
+    result_f32 = result.to(torch.float32)
 
-    answer_f32 = torch_answer.to(
-        torch.float32
-    )
+    answer_f32 = torch_answer.to(torch.float32)
 
-    abs_error = torch.abs(
-        result_f32
-        - answer_f32
-    )
+    abs_error = torch.abs(result_f32 - answer_f32)
 
     denominator = torch.clamp(
-        torch.abs(
-            answer_f32
-        ),
+        torch.abs(answer_f32),
         min=1e-12,
     )
 
-    rel_error = (
-        abs_error
-        / denominator
-    )
+    rel_error = abs_error / denominator
 
     # ========================================================
     # Mismatch statistics
     # ========================================================
 
-    mismatch_count = int(
-        mismatch_mask
-        .sum()
-        .item()
-    )
+    mismatch_count = int(mismatch_mask.sum().item())
 
-    total_count = int(
-        result.numel()
-    )
+    total_count = int(result.numel())
 
-    mismatch_ratio = (
-        mismatch_count
-        / total_count
-        if total_count > 0
-        else 0.0
-    )
+    mismatch_ratio = mismatch_count / total_count if total_count > 0 else 0.0
 
-    max_abs_error = float(
-        abs_error
-        .max()
-        .item()
-    )
+    max_abs_error = float(abs_error.max().item())
 
-    max_rel_error = float(
-        rel_error
-        .max()
-        .item()
-    )
+    max_rel_error = float(rel_error.max().item())
 
     # ========================================================
     # Find worst FAILED element
@@ -344,21 +263,12 @@ def check_equal(
     mismatch_abs_error = torch.where(
         mismatch_mask,
         abs_error,
-        torch.zeros_like(
-            abs_error
-        ),
+        torch.zeros_like(abs_error),
     )
 
-    flat_error = (
-        mismatch_abs_error
-        .reshape(-1)
-    )
+    flat_error = mismatch_abs_error.reshape(-1)
 
-    worst_flat_index = int(
-        torch.argmax(
-            flat_error
-        ).item()
-    )
+    worst_flat_index = int(torch.argmax(flat_error).item())
 
     # ========================================================
     # Convert flat index -> tensor coordinates
@@ -368,58 +278,28 @@ def check_equal(
     reversed_index = []
 
     for dim_size in reversed(shape):
-        reversed_index.append(
-            remaining
-            % dim_size
-        )
+        reversed_index.append(remaining % dim_size)
 
         remaining //= dim_size
 
-    worst_index = tuple(
-        reversed(
-            reversed_index
-        )
-    )
+    worst_index = tuple(reversed(reversed_index))
 
-    result_value = float(
-        result_f32[
-            worst_index
-        ].item()
-    )
+    result_value = float(result_f32[worst_index].item())
 
-    answer_value = float(
-        answer_f32[
-            worst_index
-        ].item()
-    )
+    answer_value = float(answer_f32[worst_index].item())
 
-    worst_abs_error = float(
-        abs_error[
-            worst_index
-        ].item()
-    )
+    worst_abs_error = float(abs_error[worst_index].item())
 
-    worst_rel_error = float(
-        rel_error[
-            worst_index
-        ].item()
-    )
+    worst_rel_error = float(rel_error[worst_index].item())
 
     # ========================================================
     # Allowed error at the worst failed element
     # ========================================================
 
-    allowed_error = (
-        float(atol)
-        + float(rtol)
-        * abs(answer_value)
-    )
+    allowed_error = float(atol) + float(rtol) * abs(answer_value)
 
     error_over_allowed = (
-        worst_abs_error
-        / allowed_error
-        if allowed_error > 0
-        else float("inf")
+        worst_abs_error / allowed_error if allowed_error > 0 else float("inf")
     )
 
     # ========================================================
@@ -427,123 +307,60 @@ def check_equal(
     # ========================================================
 
     print()
-    print(
-        "========================================"
-    )
-    print(
-        "Tensor mismatch diagnostics"
-    )
-    print(
-        "========================================"
-    )
+    print("========================================")
+    print("Tensor mismatch diagnostics")
+    print("========================================")
 
-    print(
-        f"shape             = {shape}"
-    )
+    print(f"shape             = {shape}")
 
-    print(
-        f"dtype             = "
-        f"{torch_answer.dtype}"
-    )
+    print(f"dtype             = " f"{torch_answer.dtype}")
 
-    print(
-        f"strict            = {strict}"
-    )
+    print(f"strict            = {strict}")
 
-    print(
-        f"atol              = "
-        f"{atol:.10e}"
-    )
+    print(f"atol              = " f"{atol:.10e}")
 
-    print(
-        f"rtol              = "
-        f"{rtol:.10e}"
-    )
+    print(f"rtol              = " f"{rtol:.10e}")
 
     print()
 
-    print(
-        f"mismatch_count    = "
-        f"{mismatch_count}"
-    )
+    print(f"mismatch_count    = " f"{mismatch_count}")
 
-    print(
-        f"total_count       = "
-        f"{total_count}"
-    )
+    print(f"total_count       = " f"{total_count}")
 
-    print(
-        f"mismatch_ratio    = "
-        f"{mismatch_ratio:.10%}"
-    )
+    print(f"mismatch_ratio    = " f"{mismatch_ratio:.10%}")
 
     print()
 
-    print(
-        f"max_abs_error     = "
-        f"{max_abs_error:.10e}"
-    )
+    print(f"max_abs_error     = " f"{max_abs_error:.10e}")
 
-    print(
-        f"max_rel_error     = "
-        f"{max_rel_error:.10e}"
-    )
+    print(f"max_rel_error     = " f"{max_rel_error:.10e}")
 
     print()
-    print(
-        "Worst failed element"
-    )
-    print(
-        "----------------------------------------"
-    )
+    print("Worst failed element")
+    print("----------------------------------------")
 
-    print(
-        f"flat_index        = "
-        f"{worst_flat_index}"
-    )
+    print(f"flat_index        = " f"{worst_flat_index}")
 
-    print(
-        f"index             = "
-        f"{worst_index}"
-    )
+    print(f"index             = " f"{worst_index}")
 
-    print(
-        f"LLAISYS           = "
-        f"{result_value:.10e}"
-    )
+    print(f"LLAISYS           = " f"{result_value:.10e}")
 
-    print(
-        f"Torch             = "
-        f"{answer_value:.10e}"
-    )
+    print(f"Torch             = " f"{answer_value:.10e}")
 
-    print(
-        f"abs_error         = "
-        f"{worst_abs_error:.10e}"
-    )
+    print(f"abs_error         = " f"{worst_abs_error:.10e}")
 
-    print(
-        f"rel_error         = "
-        f"{worst_rel_error:.10e}"
-    )
+    print(f"rel_error         = " f"{worst_rel_error:.10e}")
 
     if not strict:
-        print(
-            f"allowed_error     = "
-            f"{allowed_error:.10e}"
-        )
+        print(f"allowed_error     = " f"{allowed_error:.10e}")
 
-        print(
-            f"error / allowed   = "
-            f"{error_over_allowed:.6f}x"
-        )
+        print(f"error / allowed   = " f"{error_over_allowed:.6f}x")
 
-    print(
-        "========================================"
-    )
+    print("========================================")
     print()
 
     return False
+
 
 def _benchmark_function(
     func,
@@ -575,13 +392,9 @@ def _benchmark_function(
 
         end = time.perf_counter_ns()
 
-        elapsed_ms = (
-            end - start
-        ) / 1_000_000.0
+        elapsed_ms = (end - start) / 1_000_000.0
 
-        samples_ms.append(
-            elapsed_ms / repeat
-        )
+        samples_ms.append(elapsed_ms / repeat)
 
     return {
         "mean_ms": statistics.mean(samples_ms),
@@ -600,9 +413,7 @@ def benchmark_llaisys(
     rounds=10,
     label=None,
 ):
-    api = llaisys.RuntimeAPI(
-        llaisys_device(device_name)
-    )
+    api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
     def synchronize():
         api.device_synchronize()
@@ -615,11 +426,7 @@ def benchmark_llaisys(
         rounds=rounds,
     )
 
-    prefix = (
-        f"{label}: "
-        if label is not None
-        else ""
-    )
+    prefix = f"{label}: " if label is not None else ""
 
     print(
         f"        {prefix}"
@@ -650,10 +457,7 @@ def benchmark(
     )
 
     if device_name == "metax":
-        print(
-            "        Torch comparison skipped: "
-            "the reference tensor is on CPU."
-        )
+        print("        Torch comparison skipped: " "the reference tensor is on CPU.")
         return {
             "torch": None,
             "llaisys": llaisys_stats,
@@ -670,10 +474,7 @@ def benchmark(
             torch.cuda.synchronize()
 
     else:
-        raise ValueError(
-            f"Unsupported benchmark device: "
-            f"{device_name}"
-        )
+        raise ValueError(f"Unsupported benchmark device: " f"{device_name}")
 
     torch_stats = _benchmark_function(
         torch_func,
@@ -683,10 +484,7 @@ def benchmark(
         rounds=rounds,
     )
 
-    print(
-        f"        Torch {device_name}: "
-        f"median={torch_stats['median_ms']:.5f} ms"
-    )
+    print(f"        Torch {device_name}: " f"median={torch_stats['median_ms']:.5f} ms")
 
     print(
         f"        Speedup: "
@@ -697,7 +495,7 @@ def benchmark(
         "torch": torch_stats,
         "llaisys": llaisys_stats,
     }
-    
+
 
 def torch_device(device_name: str, device_id=0):
     if device_name == "cpu":
@@ -706,6 +504,7 @@ def torch_device(device_name: str, device_id=0):
         return torch.device(f"cuda:{device_id}")
     else:
         raise ValueError(f"Unsupported device name: {device_name}")
+
 
 def reference_torch_device(device_name: str, device_id=0):
     if device_name == "metax":
@@ -726,7 +525,6 @@ def llaisys_to_torch_memcpy_kind(device_type: llaisys.DeviceType):
         return llaisys.MemcpyKind.D2H
 
     return llaisys.MemcpyKind.D2D
-
 
 
 def llaisys_device(device_name: str):

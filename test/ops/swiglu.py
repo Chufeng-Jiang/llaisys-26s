@@ -33,22 +33,9 @@ def torch_swiglu(out, gate, up):
     gate_f32 = gate.float()
     up_f32 = up.float()
 
-    result = (
-        up_f32
-        * gate_f32
-        / (
-            1.0
-            + torch.exp(
-                -gate_f32
-            )
-        )
-    )
+    result = up_f32 * gate_f32 / (1.0 + torch.exp(-gate_f32))
 
-    out.copy_(
-        result.to(
-            out.dtype
-        )
-    )
+    out.copy_(result.to(out.dtype))
 
 
 def test_op_swiglu(
@@ -59,10 +46,7 @@ def test_op_swiglu(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   shape {shape} "
-        f"dtype <{dtype_name}>"
-    )
+    print(f"   shape {shape} " f"dtype <{dtype_name}>")
 
     gate, gate_ = random_tensor(
         shape,
@@ -117,11 +101,7 @@ def test_op_swiglu(
                 up_,
             ),
             device_name,
-            label=(
-                f"SwiGLU "
-                f"shape={shape} "
-                f"dtype={dtype_name}"
-            ),
+            label=(f"SwiGLU " f"shape={shape} " f"dtype={dtype_name}"),
         )
 
 
@@ -160,10 +140,7 @@ if __name__ == "__main__":
         ("bf16", 1e-2, 1e-2),
     ]
 
-    print(
-        f"Testing Ops.swiglu "
-        f"on {args.device}"
-    )
+    print(f"Testing Ops.swiglu " f"on {args.device}")
 
     for shape in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
@@ -176,8 +153,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print(
-        "\033[92m"
-        "Test passed!"
-        "\033[0m\n"
-    )
+    print("\033[92m" "Test passed!" "\033[0m\n")

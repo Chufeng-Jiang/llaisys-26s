@@ -10,11 +10,6 @@ find src test \
 find src test -name "*.py" -exec black {} +
 
 
-
-SelfAttention
-   ↓
-Full Qwen
-
 --------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
 rm -rf .xmake
@@ -28,6 +23,8 @@ xmake -r -vD 2>&1 \
 
 xmake install
 
+pip install ./python/
+
 -----------------------------------------------------
 
 cd /data/llaisys-26s
@@ -37,7 +34,6 @@ export XMAKE_ROOT=y
 export PYTHONPATH=/data/llaisys-26s/python:$PYTHONPATH
 
 xmake f -c \
-    --nv-gpu=n \
     --metax-gpu=y \
     -cv
 
@@ -73,7 +69,7 @@ python test/ops/rms_norm.py --device cpu
 python test/ops/rope.py --device cpu
 python test/ops/self_attention.py --device cpu
 python test/ops/swiglu.py --device cpu
-python test/test_runtime.py --device cpu
+
 
 
 python test/test_runtime.py --device metax
@@ -96,6 +92,13 @@ python test/test_infer.py \
         --prompt "Who are you?" \
         --max_steps 70
 
+MODEL_PATH="$(cat tmp/model_path.txt)"
+python test/test_infer.py \
+        --model "$MODEL_PATH" \
+        --test \
+        --device cpu \
+        --prompt "Who are you?" \
+        --max_steps 70
 
 cd /data/llaisys-26s
 

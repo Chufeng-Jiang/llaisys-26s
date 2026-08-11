@@ -154,11 +154,9 @@ __global__ void add_kernel_vectorized(
             }
 
         } else if constexpr (std::is_same_v<T, bf16_t>) {
-            const bf16x2_t *const a_vector
-                = reinterpret_cast<const bf16x2_t *>(a + element_index);
+            const bf16x2_t *const a_vector = reinterpret_cast<const bf16x2_t *>(a + element_index);
 
-            const bf16x2_t *const b_vector
-                = reinterpret_cast<const bf16x2_t *>(b + element_index);
+            const bf16x2_t *const b_vector = reinterpret_cast<const bf16x2_t *>(b + element_index);
 
             bf16x2_t *const c_vector = reinterpret_cast<bf16x2_t *>(c + element_index);
 

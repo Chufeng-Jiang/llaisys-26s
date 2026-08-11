@@ -30,9 +30,7 @@ def torch_rope(
 
     seq_len, n_heads, head_dim = y.shape
 
-    assert head_dim % 2 == 0, (
-        "Head dimension must be even for RoPE."
-    )
+    assert head_dim % 2 == 0, "Head dimension must be even for RoPE."
 
     # ========================================================
     # Split dimension into paired halves
@@ -45,11 +43,7 @@ def torch_rope(
     # Position IDs in FP32
     # ========================================================
 
-    positions = (
-        pos_ids
-        .to(torch.float32)
-        .unsqueeze(1)
-    )
+    positions = pos_ids.to(torch.float32).unsqueeze(1)
 
     # ========================================================
     # Match LLAISYS RoPE angle semantics
@@ -66,47 +60,23 @@ def torch_rope(
         device=y.device,
     )
 
-    exponent = (
-        2.0
-        * i
-        / head_dim
-    )
+    exponent = 2.0 * i / head_dim
 
-    denominator = (
-        theta
-        ** exponent
-    )
+    denominator = theta**exponent
 
-    freqs = (
-        positions
-        / denominator
-    )
+    freqs = positions / denominator
 
-    sin = (
-        freqs
-        .sin()
-        .unsqueeze(1)
-    )
+    sin = freqs.sin().unsqueeze(1)
 
-    cos = (
-        freqs
-        .cos()
-        .unsqueeze(1)
-    )
+    cos = freqs.cos().unsqueeze(1)
 
     # ========================================================
     # Rotation
     # ========================================================
 
-    y[..., : head_dim // 2] = (
-        x_a * cos
-        - x_b * sin
-    )
+    y[..., : head_dim // 2] = x_a * cos - x_b * sin
 
-    y[..., head_dim // 2 :] = (
-        x_b * cos
-        + x_a * sin
-    )
+    y[..., head_dim // 2 :] = x_b * cos + x_a * sin
 
 
 def test_op_rope(
@@ -118,11 +88,7 @@ def test_op_rope(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   shape {shape} "
-        f"range {start_end} "
-        f"dtype <{dtype_name}>"
-    )
+    print(f"   shape {shape} " f"range {start_end} " f"dtype <{dtype_name}>")
 
     x, x_ = random_tensor(
         shape,
@@ -183,10 +149,7 @@ def test_op_rope(
             ),
             device_name,
             label=(
-                f"RoPE "
-                f"shape={shape} "
-                f"range={start_end} "
-                f"dtype={dtype_name}"
+                f"RoPE " f"shape={shape} " f"range={start_end} " f"dtype={dtype_name}"
             ),
         )
 
@@ -246,44 +209,37 @@ if __name__ == "__main__":
             (2, 1, 4),
             (0, 2),
         ),
-
         # Decode-like: small head dimension, multi-head
         (
             (1, 12, 128),
             (512, 513),
         ),
-
         # Prefill-like: small head dimension, multi-head
         (
             (512, 12, 128),
             (512, 1024),
         ),
-
         # Intermediate head dimension
         (
             (512, 12, 256),
             (512, 1024),
         ),
-
         # Stress case: already known cache regression
         (
             (512, 4, 4096),
             (512, 1024),
         ),
     ]
-    
+
     # Temporarily test FP32 only while diagnosing
     # the large-shape numerical mismatch.
     test_dtype_prec = [
-        ("f32", 2e-4, 1e-4), # ("f32", 1e-4, 1e-4),
+        ("f32", 2e-4, 1e-4),  # ("f32", 1e-4, 1e-4),
         ("f16", 1e-3, 1e-3),
         ("bf16", 1e-2, 1e-2),
     ]
 
-    print(
-        f"Testing Ops.rope "
-        f"on {args.device}"
-    )
+    print(f"Testing Ops.rope " f"on {args.device}")
 
     for shape, start_end in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
@@ -297,8 +253,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print(
-        "\033[92m"
-        "Test passed!"
-        "\033[0m\n"
-    )
+    print("\033[92m" "Test passed!" "\033[0m\n")

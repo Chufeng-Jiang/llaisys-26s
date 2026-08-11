@@ -7,25 +7,12 @@
 
 namespace llaisys::device::metax {
 
-inline void checkMc(
-	mcError_t status,
-	const char *expression
-) {
-	if (status == mcSuccess) {
-		return;
-	}
+inline void checkMc(mcError_t status, const char *expression) {
+    if (status == mcSuccess) { return; }
 
-	throw std::runtime_error(
-		std::string(
-			"MetaX MACA runtime call failed: "
-		)
-		+ expression
-		+ " (error code "
-		+ std::to_string(
-			static_cast<int>(status)
-		)
-		+ ")"
-	);
+    throw std::runtime_error(
+        std::string("MetaX MACA runtime call failed: ") + expression + " (error code "
+        + std::to_string(static_cast<int>(status)) + ")");
 }
 
 } // namespace llaisys::device::metax

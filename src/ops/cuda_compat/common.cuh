@@ -53,158 +53,79 @@ using bf16x2_t = __nv_bfloat162;
 // Compile-time ABI checks
 // ============================================================
 
-static_assert(
-	sizeof(fp16_t) == 2,
-	"CUDA-compatible FP16 type must occupy 2 bytes."
-);
+static_assert(sizeof(fp16_t) == 2, "CUDA-compatible FP16 type must occupy 2 bytes.");
 
-static_assert(
-	sizeof(fp16x2_t) == 4,
-	"CUDA-compatible FP16x2 type must occupy 4 bytes."
-);
+static_assert(sizeof(fp16x2_t) == 4, "CUDA-compatible FP16x2 type must occupy 4 bytes.");
 
-static_assert(
-	sizeof(bf16_t) == 2,
-	"CUDA-compatible BF16 type must occupy 2 bytes."
-);
+static_assert(sizeof(bf16_t) == 2, "CUDA-compatible BF16 type must occupy 2 bytes.");
 
-static_assert(
-	sizeof(bf16x2_t) == 4,
-	"CUDA-compatible BF16x2 type must occupy 4 bytes."
-);
+static_assert(sizeof(bf16x2_t) == 4, "CUDA-compatible BF16x2 type must occupy 4 bytes.");
 
-static_assert(
-	sizeof(float4) == 16,
-	"CUDA-compatible float4 must occupy 16 bytes."
-);
+static_assert(sizeof(float4) == 16, "CUDA-compatible float4 must occupy 16 bytes.");
 
-static_assert(
-	sizeof(uint4) == 16,
-	"CUDA-compatible uint4 must occupy 16 bytes."
-);
+static_assert(sizeof(uint4) == 16, "CUDA-compatible uint4 must occupy 16 bytes.");
 
 // ============================================================
 // Template utilities
 // ============================================================
 
-template <typename>
-inline constexpr bool DEPENDENT_FALSE = false;
+template <typename> inline constexpr bool DEPENDENT_FALSE = false;
 
 // ============================================================
 // Integer helpers
 // ============================================================
 
-__host__ __device__
-constexpr std::size_t div_ceil(
-	std::size_t value,
-	std::size_t divisor
-) {
-	return value / divisor
-		+ static_cast<std::size_t>(
-			value % divisor != 0
-		);
+__host__ __device__ constexpr std::size_t div_ceil(std::size_t value, std::size_t divisor) {
+    return value / divisor + static_cast<std::size_t>(value % divisor != 0);
 }
 
 // ============================================================
 // CUDA-compatible data-type conversion
 // ============================================================
 
-template <typename T>
-__device__ __forceinline__
-float to_float(
-	T value
-) {
-	if constexpr (
-		std::is_same_v<T, float>
-	) {
-		return value;
-	} else if constexpr (
-		std::is_same_v<T, fp16_t>
-	) {
-		return __half2float(
-			value
-		);
-	} else if constexpr (
-		std::is_same_v<T, bf16_t>
-	) {
-		return __bfloat162float(
-			value
-		);
-	} else {
-		static_assert(
-			DEPENDENT_FALSE<T>,
-			"Unsupported CUDA-compatible type for conversion to float."
-		);
-	}
+template <typename T> __device__ __forceinline__ float to_float(T value) {
+    if constexpr (std::is_same_v<T, float>) {
+        return value;
+    } else if constexpr (std::is_same_v<T, fp16_t>) {
+        return __half2float(value);
+    } else if constexpr (std::is_same_v<T, bf16_t>) {
+        return __bfloat162float(value);
+    } else {
+        static_assert(
+            DEPENDENT_FALSE<T>, "Unsupported CUDA-compatible type for conversion to float.");
+    }
 }
 
-template <typename T>
-__device__ __forceinline__
-T from_float(
-	float value
-) {
-	if constexpr (
-		std::is_same_v<T, float>
-	) {
-		return value;
-	} else if constexpr (
-		std::is_same_v<T, fp16_t>
-	) {
-		return __float2half(
-			value
-		);
-	} else if constexpr (
-		std::is_same_v<T, bf16_t>
-	) {
-		return __float2bfloat16(
-			value
-		);
-	} else {
-		static_assert(
-			DEPENDENT_FALSE<T>,
-			"Unsupported CUDA-compatible type for conversion from float."
-		);
-	}
+template <typename T> __device__ __forceinline__ T from_float(float value) {
+    if constexpr (std::is_same_v<T, float>) {
+        return value;
+    } else if constexpr (std::is_same_v<T, fp16_t>) {
+        return __float2half(value);
+    } else if constexpr (std::is_same_v<T, bf16_t>) {
+        return __float2bfloat16(value);
+    } else {
+        static_assert(
+            DEPENDENT_FALSE<T>, "Unsupported CUDA-compatible type for conversion from float.");
+    }
 }
 
 // ============================================================
 // Address-alignment helpers
 // ============================================================
 
-template <
-	std::size_t Alignment,
-	typename T
->
-inline bool is_aligned(
-	const T *pointer
-) {
-	static_assert(
-		Alignment > 0
-			&& (Alignment & (Alignment - 1)) == 0,
-		"Alignment must be a nonzero power of two."
-	);
+template <std::size_t Alignment, typename T> inline bool is_aligned(const T *pointer) {
+    static_assert(
+        Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
+        "Alignment must be a nonzero power of two.");
 
-	const std::uintptr_t address =
-		reinterpret_cast<std::uintptr_t>(
-			pointer
-		);
+    const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(pointer);
 
-	return address % Alignment == 0;
+    return address % Alignment == 0;
 }
 
-template <
-	std::size_t Alignment,
-	typename... PointerTypes
->
-inline bool are_aligned(
-	PointerTypes... pointers
-) {
-	return (
-		is_aligned<Alignment>(
-			pointers
-		)
-		&& ...
-	);
+template <std::size_t Alignment, typename... PointerTypes>
+inline bool are_aligned(PointerTypes... pointers) {
+    return (is_aligned<Alignment>(pointers) && ...);
 }
 
 // ============================================================
@@ -213,24 +134,15 @@ inline bool are_aligned(
 
 using Packed128 = uint4;
 
-inline constexpr std::size_t PACKED_128_BYTES =
-	sizeof(Packed128);
+inline constexpr std::size_t PACKED_128_BYTES = sizeof(Packed128);
 
-inline constexpr std::size_t PACKED_128_ALIGNMENT =
-	alignof(Packed128);
+inline constexpr std::size_t PACKED_128_ALIGNMENT = alignof(Packed128);
 
-static_assert(
-	PACKED_128_BYTES == 16,
-	"Packed128 must occupy exactly 16 bytes."
-);
+static_assert(PACKED_128_BYTES == 16, "Packed128 must occupy exactly 16 bytes.");
 
-static_assert(
-	PACKED_128_ALIGNMENT == 16,
-	"Packed128 must require 16-byte alignment."
-);
+static_assert(PACKED_128_ALIGNMENT == 16, "Packed128 must require 16-byte alignment.");
 
 template <typename T>
-inline constexpr std::size_t PACKED_128_ELEMENTS =
-	PACKED_128_BYTES / sizeof(T);
+inline constexpr std::size_t PACKED_128_ELEMENTS = PACKED_128_BYTES / sizeof(T);
 
 } // namespace llaisys::ops::cuda_compat

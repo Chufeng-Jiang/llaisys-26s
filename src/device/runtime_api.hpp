@@ -4,9 +4,7 @@
 
 namespace llaisys::device {
 
-const LlaisysRuntimeAPI *getRuntimeAPI(
-	llaisysDeviceType_t device_type
-);
+const LlaisysRuntimeAPI *getRuntimeAPI(llaisysDeviceType_t device_type);
 
 const LlaisysRuntimeAPI *getUnsupportedRuntimeAPI();
 

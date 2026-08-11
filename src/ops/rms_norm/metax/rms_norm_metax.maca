@@ -17,8 +17,7 @@
 
 namespace {
 
-namespace cuda_compat =
-	llaisys::ops::cuda_compat;
+namespace cuda_compat = llaisys::ops::cuda_compat;
 
 using llaisys::device::metax::dispatch_metax_dtype;
 
@@ -27,8 +26,8 @@ using llaisys::device::metax::dispatch_metax_dtype;
 // ============================================================
 
 enum class MetaXRMSNormReduction {
-	TREE,
-	CUB,
+    TREE,
+    CUB,
 };
 
 // ============================================================
@@ -52,34 +51,19 @@ enum class MetaXRMSNormReduction {
 // ============================================================
 
 unsigned int get_metax_rms_norm_block_size() {
-	const char *value =
-		std::getenv(
-			"LLAISYS_METAX_RMS_NORM_BLOCK_SIZE"
-		);
+    const char *value = std::getenv("LLAISYS_METAX_RMS_NORM_BLOCK_SIZE");
 
-	if (value == nullptr) {
-		return 256;
-	}
+    if (value == nullptr) { return 256; }
 
-	const int block_size =
-		std::atoi(
-			value
-		);
+    const int block_size = std::atoi(value);
 
-	if (
-		block_size != 64
-		&& block_size != 128
-		&& block_size != 256
-	) {
-		throw std::invalid_argument(
-			"LLAISYS_METAX_RMS_NORM_BLOCK_SIZE "
-			"must be 64, 128, or 256"
-		);
-	}
+    if (block_size != 64 && block_size != 128 && block_size != 256) {
+        throw std::invalid_argument(
+            "LLAISYS_METAX_RMS_NORM_BLOCK_SIZE "
+            "must be 64, 128, or 256");
+    }
 
-	return static_cast<unsigned int>(
-		block_size
-	);
+    return static_cast<unsigned int>(block_size);
 }
 
 // ============================================================
@@ -101,55 +85,30 @@ unsigned int get_metax_rms_norm_block_size() {
 //
 // ============================================================
 
-MetaXRMSNormReduction
-get_metax_rms_norm_reduction() {
-	const char *value =
-		std::getenv(
-			"LLAISYS_METAX_RMS_NORM_REDUCTION"
-		);
+MetaXRMSNormReduction get_metax_rms_norm_reduction() {
+    const char *value = std::getenv("LLAISYS_METAX_RMS_NORM_REDUCTION");
 
-	if (value == nullptr) {
-		return MetaXRMSNormReduction::TREE;
-	}
+    if (value == nullptr) { return MetaXRMSNormReduction::TREE; }
 
-	if (
-		std::strcmp(
-			value,
-			"tree"
-		)
-		== 0
-	) {
-		return MetaXRMSNormReduction::TREE;
-	}
+    if (std::strcmp(value, "tree") == 0) { return MetaXRMSNormReduction::TREE; }
 
-	if (
-		std::strcmp(
-			value,
-			"cub"
-		)
-		== 0
-	) {
-		return MetaXRMSNormReduction::CUB;
-	}
+    if (std::strcmp(value, "cub") == 0) { return MetaXRMSNormReduction::CUB; }
 
-	throw std::invalid_argument(
-		"LLAISYS_METAX_RMS_NORM_REDUCTION "
-		"must be 'tree' or 'cub'"
-	);
+    throw std::invalid_argument(
+        "LLAISYS_METAX_RMS_NORM_REDUCTION "
+        "must be 'tree' or 'cub'");
 }
 
-const char *get_metax_rms_norm_reduction_name(
-	MetaXRMSNormReduction reduction
-) {
-	switch (reduction) {
-	case MetaXRMSNormReduction::TREE:
-		return "tree";
+const char *get_metax_rms_norm_reduction_name(MetaXRMSNormReduction reduction) {
+    switch (reduction) {
+    case MetaXRMSNormReduction::TREE:
+        return "tree";
 
-	case MetaXRMSNormReduction::CUB:
-		return "cub";
-	}
+    case MetaXRMSNormReduction::CUB:
+        return "cub";
+    }
 
-	return "unknown";
+    return "unknown";
 }
 
 // ============================================================
@@ -168,24 +127,12 @@ const char *get_metax_rms_norm_reduction_name(
 //
 // ============================================================
 
-template <typename T>
-__device__ __forceinline__
-float metax_rms_norm_to_float(
-	T value
-) {
-	return static_cast<float>(
-		value
-	);
+template <typename T> __device__ __forceinline__ float metax_rms_norm_to_float(T value) {
+    return static_cast<float>(value);
 }
 
-template <typename T>
-__device__ __forceinline__
-T metax_rms_norm_from_float(
-	float value
-) {
-	return static_cast<T>(
-		value
-	);
+template <typename T> __device__ __forceinline__ T metax_rms_norm_from_float(float value) {
+    return static_cast<T>(value);
 }
 
 // ============================================================
@@ -210,25 +157,14 @@ T metax_rms_norm_from_float(
 //
 // ============================================================
 
-template <typename T>
-inline constexpr std::size_t
-	CUB_PACKED_128_ELEMENTS =
-		16 / sizeof(T);
+template <typename T> inline constexpr std::size_t CUB_PACKED_128_ELEMENTS = 16 / sizeof(T);
 
 // ============================================================
 // Packed128 load
 // ============================================================
 
-template <typename T>
-__device__ __forceinline__
-uint4 load_cub_packed_128(
-	const T *ptr
-) {
-	return *reinterpret_cast<
-		const uint4 *
-	>(
-		ptr
-	);
+template <typename T> __device__ __forceinline__ uint4 load_cub_packed_128(const T *ptr) {
+    return *reinterpret_cast<const uint4 *>(ptr);
 }
 
 // ============================================================
@@ -236,16 +172,8 @@ uint4 load_cub_packed_128(
 // ============================================================
 
 template <typename T>
-__device__ __forceinline__
-void store_cub_packed_128(
-	T *ptr,
-	const uint4 &value
-) {
-	*reinterpret_cast<
-		uint4 *
-	>(
-		ptr
-	) = value;
+__device__ __forceinline__ void store_cub_packed_128(T *ptr, const uint4 &value) {
+    *reinterpret_cast<uint4 *>(ptr) = value;
 }
 
 // ============================================================
@@ -278,350 +206,181 @@ void store_cub_packed_128(
 //
 // ============================================================
 
-template <
-	typename T,
-	unsigned int BLOCK_SIZE
->
+template <typename T, unsigned int BLOCK_SIZE>
 __global__ void rms_norm_cub_kernel(
-	T *out,
-	const T *in,
-	const T *weight,
-	float eps,
-	std::size_t nrow,
-	std::size_t ncol,
-	bool use_packed_kernel
-) {
-	using BlockReduce =
-		cub::BlockReduce<
-			float,
-			BLOCK_SIZE
-		>;
+    T *out,
+    const T *in,
+    const T *weight,
+    float eps,
+    std::size_t nrow,
+    std::size_t ncol,
+    bool use_packed_kernel) {
+    using BlockReduce = cub::BlockReduce<float, BLOCK_SIZE>;
 
-	__shared__
-	typename BlockReduce::TempStorage
-		temp_storage;
+    __shared__ typename BlockReduce::TempStorage temp_storage;
 
-	__shared__
-	float inverse_rms;
+    __shared__ float inverse_rms;
 
-	const std::size_t row =
-		static_cast<std::size_t>(
-			blockIdx.x
-		);
+    const std::size_t row = static_cast<std::size_t>(blockIdx.x);
 
-	if (row >= nrow) {
-		return;
-	}
+    if (row >= nrow) { return; }
 
-	const std::size_t row_offset =
-		row
-		* ncol;
+    const std::size_t row_offset = row * ncol;
 
-	// ========================================================
-	// Stage 1:
-	// FP32 sum of squares
-	// ========================================================
+    // ========================================================
+    // Stage 1:
+    // FP32 sum of squares
+    // ========================================================
 
-	float local_sum =
-		0.0F;
+    float local_sum = 0.0F;
 
-	if (use_packed_kernel) {
-		// ----------------------------------------------------
-		// Packed128 input traversal
-		// ----------------------------------------------------
+    if (use_packed_kernel) {
+        // ----------------------------------------------------
+        // Packed128 input traversal
+        // ----------------------------------------------------
 
-		constexpr std::size_t
-			ELEMENTS_PER_PACK =
-				CUB_PACKED_128_ELEMENTS<T>;
+        constexpr std::size_t ELEMENTS_PER_PACK = CUB_PACKED_128_ELEMENTS<T>;
 
-		const std::size_t packs_per_row =
-			ncol
-			/ ELEMENTS_PER_PACK;
+        const std::size_t packs_per_row = ncol / ELEMENTS_PER_PACK;
 
-		const T *row_input =
-			in
-			+ row_offset;
+        const T *row_input = in + row_offset;
 
-		for (
-			std::size_t pack_index =
-				static_cast<std::size_t>(
-					threadIdx.x
-				);
-			pack_index < packs_per_row;
-			pack_index += BLOCK_SIZE
-		) {
-			const std::size_t element_offset =
-				pack_index
-				* ELEMENTS_PER_PACK;
+        for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
+             pack_index < packs_per_row;
+             pack_index += BLOCK_SIZE) {
+            const std::size_t element_offset = pack_index * ELEMENTS_PER_PACK;
 
-			const uint4 packed =
-				load_cub_packed_128(
-					row_input
-					+ element_offset
-				);
+            const uint4 packed = load_cub_packed_128(row_input + element_offset);
 
-			const T *values =
-				reinterpret_cast<
-					const T *
-				>(
-					&packed
-				);
+            const T *values = reinterpret_cast<const T *>(&packed);
 
 #pragma unroll
-			for (
-				std::size_t i = 0;
-				i < ELEMENTS_PER_PACK;
-				++i
-			) {
-				const float value =
-					metax_rms_norm_to_float(
-						values[i]
-					);
+            for (std::size_t i = 0; i < ELEMENTS_PER_PACK; ++i) {
+                const float value = metax_rms_norm_to_float(values[i]);
 
-				local_sum =
-					fmaf(
-						value,
-						value,
-						local_sum
-					);
-			}
-		}
-	} else {
-		// ----------------------------------------------------
-		// Scalar input traversal
-		// ----------------------------------------------------
+                local_sum = fmaf(value, value, local_sum);
+            }
+        }
+    } else {
+        // ----------------------------------------------------
+        // Scalar input traversal
+        // ----------------------------------------------------
 
-		for (
-			std::size_t col =
-				static_cast<std::size_t>(
-					threadIdx.x
-				);
-			col < ncol;
-			col += BLOCK_SIZE
-		) {
-			const float value =
-				metax_rms_norm_to_float(
-					in[
-						row_offset
-						+ col
-					]
-				);
+        for (std::size_t col = static_cast<std::size_t>(threadIdx.x); col < ncol;
+             col += BLOCK_SIZE) {
+            const float value = metax_rms_norm_to_float(in[row_offset + col]);
 
-			local_sum =
-				fmaf(
-					value,
-					value,
-					local_sum
-				);
-		}
-	}
+            local_sum = fmaf(value, value, local_sum);
+        }
+    }
 
-	// ========================================================
-	// Stage 2:
-	// CUB BlockReduce
-	// ========================================================
+    // ========================================================
+    // Stage 2:
+    // CUB BlockReduce
+    // ========================================================
 
-	const float sum =
-		BlockReduce(
-			temp_storage
-		).Sum(
-			local_sum
-		);
+    const float sum = BlockReduce(temp_storage).Sum(local_sum);
 
-	if (threadIdx.x == 0) {
-		const float mean =
-			sum
-			/ static_cast<float>(
-				ncol
-			);
+    if (threadIdx.x == 0) {
+        const float mean = sum / static_cast<float>(ncol);
 
-		inverse_rms =
-			1.0F
-			/ sqrtf(
-				mean
-				+ eps
-			);
-	}
+        inverse_rms = 1.0F / sqrtf(mean + eps);
+    }
 
-	__syncthreads();
+    __syncthreads();
 
-	const float inv =
-		inverse_rms;
+    const float inv = inverse_rms;
 
-	// ========================================================
-	// Stage 3:
-	// Normalize + weight
-	// ========================================================
-	//
-	// All input reads used by the reduction have completed
-	// before this point.
-	//
-	// Therefore:
-	//
-	//     out == in
-	//
-	// remains safe.
-	// ========================================================
+    // ========================================================
+    // Stage 3:
+    // Normalize + weight
+    // ========================================================
+    //
+    // All input reads used by the reduction have completed
+    // before this point.
+    //
+    // Therefore:
+    //
+    //     out == in
+    //
+    // remains safe.
+    // ========================================================
 
-	if (use_packed_kernel) {
-		// ----------------------------------------------------
-		// Packed128 output traversal
-		// ----------------------------------------------------
+    if (use_packed_kernel) {
+        // ----------------------------------------------------
+        // Packed128 output traversal
+        // ----------------------------------------------------
 
-		constexpr std::size_t
-			ELEMENTS_PER_PACK =
-				CUB_PACKED_128_ELEMENTS<T>;
+        constexpr std::size_t ELEMENTS_PER_PACK = CUB_PACKED_128_ELEMENTS<T>;
 
-		const std::size_t packs_per_row =
-			ncol
-			/ ELEMENTS_PER_PACK;
+        const std::size_t packs_per_row = ncol / ELEMENTS_PER_PACK;
 
-		const T *row_input =
-			in
-			+ row_offset;
+        const T *row_input = in + row_offset;
 
-		T *row_output =
-			out
-			+ row_offset;
+        T *row_output = out + row_offset;
 
-		for (
-			std::size_t pack_index =
-				static_cast<std::size_t>(
-					threadIdx.x
-				);
-			pack_index < packs_per_row;
-			pack_index += BLOCK_SIZE
-		) {
-			const std::size_t element_offset =
-				pack_index
-				* ELEMENTS_PER_PACK;
+        for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
+             pack_index < packs_per_row;
+             pack_index += BLOCK_SIZE) {
+            const std::size_t element_offset = pack_index * ELEMENTS_PER_PACK;
 
-			// -----------------------------------------------
-			// Packed input
-			// -----------------------------------------------
+            // -----------------------------------------------
+            // Packed input
+            // -----------------------------------------------
 
-			const uint4 input_packed =
-				load_cub_packed_128(
-					row_input
-					+ element_offset
-				);
+            const uint4 input_packed = load_cub_packed_128(row_input + element_offset);
 
-			// -----------------------------------------------
-			// Packed weight
-			// -----------------------------------------------
+            // -----------------------------------------------
+            // Packed weight
+            // -----------------------------------------------
 
-			const uint4 weight_packed =
-				load_cub_packed_128(
-					weight
-					+ element_offset
-				);
+            const uint4 weight_packed = load_cub_packed_128(weight + element_offset);
 
-			const T *input_values =
-				reinterpret_cast<
-					const T *
-				>(
-					&input_packed
-				);
+            const T *input_values = reinterpret_cast<const T *>(&input_packed);
 
-			const T *weight_values =
-				reinterpret_cast<
-					const T *
-				>(
-					&weight_packed
-				);
+            const T *weight_values = reinterpret_cast<const T *>(&weight_packed);
 
-			// -----------------------------------------------
-			// Build packed result
-			// -----------------------------------------------
+            // -----------------------------------------------
+            // Build packed result
+            // -----------------------------------------------
 
-			uint4 output_packed;
+            uint4 output_packed;
 
-			T *output_values =
-				reinterpret_cast<
-					T *
-				>(
-					&output_packed
-				);
+            T *output_values = reinterpret_cast<T *>(&output_packed);
 
 #pragma unroll
-			for (
-				std::size_t i = 0;
-				i < ELEMENTS_PER_PACK;
-				++i
-			) {
-				const float input_value =
-					metax_rms_norm_to_float(
-						input_values[i]
-					);
+            for (std::size_t i = 0; i < ELEMENTS_PER_PACK; ++i) {
+                const float input_value = metax_rms_norm_to_float(input_values[i]);
 
-				const float weight_value =
-					metax_rms_norm_to_float(
-						weight_values[i]
-					);
+                const float weight_value = metax_rms_norm_to_float(weight_values[i]);
 
-				const float normalized =
-					input_value
-					* inv;
+                const float normalized = input_value * inv;
 
-				const float result =
-					normalized
-					* weight_value;
+                const float result = normalized * weight_value;
 
-				output_values[i] =
-					metax_rms_norm_from_float<T>(
-						result
-					);
-			}
+                output_values[i] = metax_rms_norm_from_float<T>(result);
+            }
 
-			store_cub_packed_128(
-				row_output
-					+ element_offset,
-				output_packed
-			);
-		}
-	} else {
-		// ----------------------------------------------------
-		// Scalar output traversal
-		// ----------------------------------------------------
+            store_cub_packed_128(row_output + element_offset, output_packed);
+        }
+    } else {
+        // ----------------------------------------------------
+        // Scalar output traversal
+        // ----------------------------------------------------
 
-		for (
-			std::size_t col =
-				static_cast<std::size_t>(
-					threadIdx.x
-				);
-			col < ncol;
-			col += BLOCK_SIZE
-		) {
-			const float input_value =
-				metax_rms_norm_to_float(
-					in[
-						row_offset
-						+ col
-					]
-				);
+        for (std::size_t col = static_cast<std::size_t>(threadIdx.x); col < ncol;
+             col += BLOCK_SIZE) {
+            const float input_value = metax_rms_norm_to_float(in[row_offset + col]);
 
-			const float weight_value =
-				metax_rms_norm_to_float(
-					weight[col]
-				);
+            const float weight_value = metax_rms_norm_to_float(weight[col]);
 
-			const float normalized =
-				input_value
-				* inv;
+            const float normalized = input_value * inv;
 
-			const float result =
-				normalized
-				* weight_value;
+            const float result = normalized * weight_value;
 
-			out[
-				row_offset
-				+ col
-			] =
-				metax_rms_norm_from_float<T>(
-					result
-				);
-		}
-	}
+            out[row_offset + col] = metax_rms_norm_from_float<T>(result);
+        }
+    }
 }
 
 // ============================================================
@@ -637,75 +396,37 @@ __global__ void rms_norm_cub_kernel(
 
 template <typename T>
 void launch_tree_rms_norm(
-	T *out,
-	const T *in,
-	const T *weight,
-	float eps,
-	std::size_t nrow,
-	std::size_t ncol,
-	std::size_t grid_size,
-	bool use_packed_kernel,
-	unsigned int block_size,
-	mcStream_t stream
-) {
-	switch (block_size) {
-	case 64:
-		cuda_compat::launch_rms_norm_kernel<
-			T,
-			64
-		>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			grid_size,
-			use_packed_kernel,
-			stream
-		);
-		break;
+    T *out,
+    const T *in,
+    const T *weight,
+    float eps,
+    std::size_t nrow,
+    std::size_t ncol,
+    std::size_t grid_size,
+    bool use_packed_kernel,
+    unsigned int block_size,
+    mcStream_t stream) {
+    switch (block_size) {
+    case 64:
+        cuda_compat::launch_rms_norm_kernel<T, 64>(
+            out, in, weight, eps, nrow, ncol, grid_size, use_packed_kernel, stream);
+        break;
 
-	case 128:
-		cuda_compat::launch_rms_norm_kernel<
-			T,
-			128
-		>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			grid_size,
-			use_packed_kernel,
-			stream
-		);
-		break;
+    case 128:
+        cuda_compat::launch_rms_norm_kernel<T, 128>(
+            out, in, weight, eps, nrow, ncol, grid_size, use_packed_kernel, stream);
+        break;
 
-	case 256:
-		cuda_compat::launch_rms_norm_kernel<
-			T,
-			256
-		>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			grid_size,
-			use_packed_kernel,
-			stream
-		);
-		break;
+    case 256:
+        cuda_compat::launch_rms_norm_kernel<T, 256>(
+            out, in, weight, eps, nrow, ncol, grid_size, use_packed_kernel, stream);
+        break;
 
-	default:
-		throw std::invalid_argument(
-			"Unsupported MetaX RMSNorm "
-			"tree block size."
-		);
-	}
+    default:
+        throw std::invalid_argument(
+            "Unsupported MetaX RMSNorm "
+            "tree block size.");
+    }
 }
 
 // ============================================================
@@ -714,89 +435,39 @@ void launch_tree_rms_norm(
 
 template <typename T>
 void launch_cub_rms_norm(
-	T *out,
-	const T *in,
-	const T *weight,
-	float eps,
-	std::size_t nrow,
-	std::size_t ncol,
-	std::size_t grid_size,
-	bool use_packed_kernel,
-	unsigned int block_size,
-	mcStream_t stream
-) {
-	const unsigned int grid =
-		static_cast<unsigned int>(
-			grid_size
-		);
+    T *out,
+    const T *in,
+    const T *weight,
+    float eps,
+    std::size_t nrow,
+    std::size_t ncol,
+    std::size_t grid_size,
+    bool use_packed_kernel,
+    unsigned int block_size,
+    mcStream_t stream) {
+    const unsigned int grid = static_cast<unsigned int>(grid_size);
 
-	switch (block_size) {
-	case 64:
-		rms_norm_cub_kernel<
-			T,
-			64
-		><<<
-			grid,
-			64,
-			0,
-			stream
-		>>>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			use_packed_kernel
-		);
-		break;
+    switch (block_size) {
+    case 64:
+        rms_norm_cub_kernel<T, 64>
+            <<<grid, 64, 0, stream>>>(out, in, weight, eps, nrow, ncol, use_packed_kernel);
+        break;
 
-	case 128:
-		rms_norm_cub_kernel<
-			T,
-			128
-		><<<
-			grid,
-			128,
-			0,
-			stream
-		>>>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			use_packed_kernel
-		);
-		break;
+    case 128:
+        rms_norm_cub_kernel<T, 128>
+            <<<grid, 128, 0, stream>>>(out, in, weight, eps, nrow, ncol, use_packed_kernel);
+        break;
 
-	case 256:
-		rms_norm_cub_kernel<
-			T,
-			256
-		><<<
-			grid,
-			256,
-			0,
-			stream
-		>>>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			use_packed_kernel
-		);
-		break;
+    case 256:
+        rms_norm_cub_kernel<T, 256>
+            <<<grid, 256, 0, stream>>>(out, in, weight, eps, nrow, ncol, use_packed_kernel);
+        break;
 
-	default:
-		throw std::invalid_argument(
-			"Unsupported MetaX RMSNorm "
-			"CUB block size."
-		);
-	}
+    default:
+        throw std::invalid_argument(
+            "Unsupported MetaX RMSNorm "
+            "CUB block size.");
+    }
 }
 
 // ============================================================
@@ -805,226 +476,148 @@ void launch_cub_rms_norm(
 
 template <typename T>
 void launch_metax_rms_norm(
-	T *out,
-	const T *in,
-	const T *weight,
-	float eps,
-	std::size_t nrow,
-	std::size_t ncol,
-	mcStream_t stream
-) {
-	// --------------------------------------------------------
-	// Pointer validation
-	// --------------------------------------------------------
+    T *out,
+    const T *in,
+    const T *weight,
+    float eps,
+    std::size_t nrow,
+    std::size_t ncol,
+    mcStream_t stream) {
+    // --------------------------------------------------------
+    // Pointer validation
+    // --------------------------------------------------------
 
-	CHECK_ARGUMENT(
-		nrow == 0
-			|| out != nullptr,
-		"RMSNorm: output pointer "
-		"must not be null."
-	);
+    CHECK_ARGUMENT(
+        nrow == 0 || out != nullptr,
+        "RMSNorm: output pointer "
+        "must not be null.");
 
-	CHECK_ARGUMENT(
-		nrow == 0
-			|| in != nullptr,
-		"RMSNorm: input pointer "
-		"must not be null."
-	);
+    CHECK_ARGUMENT(
+        nrow == 0 || in != nullptr,
+        "RMSNorm: input pointer "
+        "must not be null.");
 
-	CHECK_ARGUMENT(
-		nrow == 0
-			|| weight != nullptr,
-		"RMSNorm: weight pointer "
-		"must not be null."
-	);
+    CHECK_ARGUMENT(
+        nrow == 0 || weight != nullptr,
+        "RMSNorm: weight pointer "
+        "must not be null.");
 
-	if (nrow == 0) {
-		return;
-	}
+    if (nrow == 0) { return; }
 
-	// --------------------------------------------------------
-	// Shape validation
-	// --------------------------------------------------------
+    // --------------------------------------------------------
+    // Shape validation
+    // --------------------------------------------------------
 
-	CHECK_ARGUMENT(
-		ncol > 0,
-		"RMSNorm: row width must be "
-		"greater than zero."
-	);
+    CHECK_ARGUMENT(
+        ncol > 0,
+        "RMSNorm: row width must be "
+        "greater than zero.");
 
-	CHECK_ARGUMENT(
-		ncol
-			<= std::numeric_limits<
-				std::size_t
-			>::max()
-				/ nrow,
-		"RMSNorm: tensor element count "
-		"overflows size_t."
-	);
+    CHECK_ARGUMENT(
+        ncol <= std::numeric_limits<std::size_t>::max() / nrow,
+        "RMSNorm: tensor element count "
+        "overflows size_t.");
 
-	// --------------------------------------------------------
-	// Epsilon validation
-	// --------------------------------------------------------
+    // --------------------------------------------------------
+    // Epsilon validation
+    // --------------------------------------------------------
 
-	CHECK_ARGUMENT(
-		std::isfinite(
-			eps
-		)
-			&& eps >= 0.0F,
-		"RMSNorm: epsilon must be "
-		"finite and nonnegative."
-	);
+    CHECK_ARGUMENT(
+        std::isfinite(eps) && eps >= 0.0F,
+        "RMSNorm: epsilon must be "
+        "finite and nonnegative.");
 
-	// --------------------------------------------------------
-	// Grid validation
-	// --------------------------------------------------------
+    // --------------------------------------------------------
+    // Grid validation
+    // --------------------------------------------------------
 
-	CHECK_ARGUMENT(
-		nrow
-			<= static_cast<
-				std::size_t
-			>(
-				std::numeric_limits<
-					unsigned int
-				>::max()
-			),
-		"RMSNorm: MetaX grid size exceeds "
-		"supported launch range."
-	);
+    CHECK_ARGUMENT(
+        nrow <= static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()),
+        "RMSNorm: MetaX grid size exceeds "
+        "supported launch range.");
 
-	// One block per row.
-	const std::size_t grid_size =
-		nrow;
+    // One block per row.
+    const std::size_t grid_size = nrow;
 
-	// ========================================================
-	// Experimental policy controls
-	// ========================================================
+    // ========================================================
+    // Experimental policy controls
+    // ========================================================
 
-	const unsigned int block_size =
-		get_metax_rms_norm_block_size();
+    const unsigned int block_size = get_metax_rms_norm_block_size();
 
-	const MetaXRMSNormReduction reduction =
-		get_metax_rms_norm_reduction();
+    const MetaXRMSNormReduction reduction = get_metax_rms_norm_reduction();
 
-	// ========================================================
-	// Packed128 eligibility
-	// ========================================================
-	//
-	// Reuse the same portable contract used by the shared
-	// CUDA-compatible RMSNorm implementation.
-	//
-	// Requirements include:
-	//
-	//     complete 128-bit packs per row
-	//     aligned out
-	//     aligned in
-	//     aligned weight
-	//
-	// ========================================================
+    // ========================================================
+    // Packed128 eligibility
+    // ========================================================
+    //
+    // Reuse the same portable contract used by the shared
+    // CUDA-compatible RMSNorm implementation.
+    //
+    // Requirements include:
+    //
+    //     complete 128-bit packs per row
+    //     aligned out
+    //     aligned in
+    //     aligned weight
+    //
+    // ========================================================
 
-	const bool packed_eligible =
-		cuda_compat::can_use_packed_rms_norm<T>(
-			out,
-			in,
-			weight,
-			ncol
-		);
+    const bool packed_eligible = cuda_compat::can_use_packed_rms_norm<T>(out, in, weight, ncol);
 
-	// ========================================================
-	// Force-scalar experiment control
-	// ========================================================
+    // ========================================================
+    // Force-scalar experiment control
+    // ========================================================
 
-	const bool force_scalar =
-		std::getenv(
-			"LLAISYS_METAX_RMS_NORM_FORCE_SCALAR"
-		)
-		!= nullptr;
+    const bool force_scalar = std::getenv("LLAISYS_METAX_RMS_NORM_FORCE_SCALAR") != nullptr;
 
-	const bool use_packed_kernel =
-		packed_eligible
-		&& !force_scalar;
+    const bool use_packed_kernel = packed_eligible && !force_scalar;
 
-	// ========================================================
-	// Debug instrumentation
-	// ========================================================
+    // ========================================================
+    // Debug instrumentation
+    // ========================================================
 
-	if (
-		std::getenv(
-			"LLAISYS_METAX_RMS_NORM_DEBUG"
-		)
-		!= nullptr
-	) {
-		std::fprintf(
-			stderr,
-			"[MetaX RMSNorm] "
-			"nrow=%zu "
-			"ncol=%zu "
-			"block=%u "
-			"reduction=%s "
-			"eligible=%s "
-			"force_scalar=%s "
-			"packed=%s\n",
-			nrow,
-			ncol,
-			block_size,
-			get_metax_rms_norm_reduction_name(
-				reduction
-			),
-			packed_eligible
-				? "true"
-				: "false",
-			force_scalar
-				? "true"
-				: "false",
-			use_packed_kernel
-				? "true"
-				: "false"
-		);
-	}
+    if (std::getenv("LLAISYS_METAX_RMS_NORM_DEBUG") != nullptr) {
+        std::fprintf(
+            stderr,
+            "[MetaX RMSNorm] "
+            "nrow=%zu "
+            "ncol=%zu "
+            "block=%u "
+            "reduction=%s "
+            "eligible=%s "
+            "force_scalar=%s "
+            "packed=%s\n",
+            nrow,
+            ncol,
+            block_size,
+            get_metax_rms_norm_reduction_name(reduction),
+            packed_eligible ? "true" : "false",
+            force_scalar ? "true" : "false",
+            use_packed_kernel ? "true" : "false");
+    }
 
-	// ========================================================
-	// Reduction implementation dispatch
-	// ========================================================
+    // ========================================================
+    // Reduction implementation dispatch
+    // ========================================================
 
-	switch (reduction) {
-	case MetaXRMSNormReduction::TREE:
-		launch_tree_rms_norm<T>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			grid_size,
-			use_packed_kernel,
-			block_size,
-			stream
-		);
-		break;
+    switch (reduction) {
+    case MetaXRMSNormReduction::TREE:
+        launch_tree_rms_norm<T>(
+            out, in, weight, eps, nrow, ncol, grid_size, use_packed_kernel, block_size, stream);
+        break;
 
-	case MetaXRMSNormReduction::CUB:
-		launch_cub_rms_norm<T>(
-			out,
-			in,
-			weight,
-			eps,
-			nrow,
-			ncol,
-			grid_size,
-			use_packed_kernel,
-			block_size,
-			stream
-		);
-		break;
-	}
+    case MetaXRMSNormReduction::CUB:
+        launch_cub_rms_norm<T>(
+            out, in, weight, eps, nrow, ncol, grid_size, use_packed_kernel, block_size, stream);
+        break;
+    }
 
-	// ========================================================
-	// Launch error check
-	// ========================================================
+    // ========================================================
+    // Launch error check
+    // ========================================================
 
-	MC_CHECK(
-		mcGetLastError()
-	);
+    MC_CHECK(mcGetLastError());
 }
 
 } // namespace
@@ -1036,43 +629,28 @@ void launch_metax_rms_norm(
 namespace llaisys::ops::metax {
 
 void rms_norm(
-	std::byte *out,
-	const std::byte *in,
-	const std::byte *weight,
-	float eps,
-	llaisysDataType_t type,
-	std::size_t nrow,
-	std::size_t ncol,
-	llaisysStream_t stream
-) {
-	const mcStream_t mc_stream =
-		reinterpret_cast<mcStream_t>(
-			stream
-		);
+    std::byte *out,
+    const std::byte *in,
+    const std::byte *weight,
+    float eps,
+    llaisysDataType_t type,
+    std::size_t nrow,
+    std::size_t ncol,
+    llaisysStream_t stream) {
+    const mcStream_t mc_stream = reinterpret_cast<mcStream_t>(stream);
 
-	return dispatch_metax_dtype(
-		type,
-		[&](auto tag) {
-			using T =
-				typename decltype(tag)::type;
+    return dispatch_metax_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
 
-			return launch_metax_rms_norm<T>(
-				reinterpret_cast<T *>(
-					out
-				),
-				reinterpret_cast<const T *>(
-					in
-				),
-				reinterpret_cast<const T *>(
-					weight
-				),
-				eps,
-				nrow,
-				ncol,
-				mc_stream
-			);
-		}
-	);
+        return launch_metax_rms_norm<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight),
+            eps,
+            nrow,
+            ncol,
+            mc_stream);
+    });
 }
 
 } // namespace llaisys::ops::metax

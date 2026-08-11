@@ -41,9 +41,7 @@ def torch_rms_norm(
         keepdim=True,
     )
 
-    mean.add_(
-        eps
-    )
+    mean.add_(eps)
 
     torch.rsqrt(
         mean,
@@ -56,9 +54,7 @@ def torch_rms_norm(
         out=ans,
     )
 
-    ans.mul_(
-        w
-    )
+    ans.mul_(w)
 
 
 def test_op_rms_norm(
@@ -69,10 +65,7 @@ def test_op_rms_norm(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   shape {shape} "
-        f"dtype <{dtype_name}>"
-    )
+    print(f"   shape {shape} " f"dtype <{dtype_name}>")
 
     x, x_ = random_tensor(
         shape,
@@ -126,11 +119,7 @@ def test_op_rms_norm(
                 eps,
             ),
             device_name,
-            label=(
-                f"RMSNorm "
-                f"shape={shape} "
-                f"dtype={dtype_name}"
-            ),
+            label=(f"RMSNorm " f"shape={shape} " f"dtype={dtype_name}"),
         )
 
 
@@ -160,16 +149,12 @@ if __name__ == "__main__":
     test_shapes = [
         # Tiny sanity case
         (1, 4),
-
         # Decode-like RMSNorm
         (1, 4096),
-
         # Large scalar-fallback case
         (512, 4095),
-
         # Prefill-like packed-eligible case
         (512, 4096),
-
     ]
 
     test_dtype_prec = [
@@ -191,10 +176,7 @@ if __name__ == "__main__":
         ),
     ]
 
-    print(
-        f"Testing Ops.rms_norm "
-        f"on {args.device}"
-    )
+    print(f"Testing Ops.rms_norm " f"on {args.device}")
 
     for shape in test_shapes:
         for (
@@ -211,8 +193,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print(
-        "\033[92m"
-        "Test passed!"
-        "\033[0m\n"
-    )
+    print("\033[92m" "Test passed!" "\033[0m\n")

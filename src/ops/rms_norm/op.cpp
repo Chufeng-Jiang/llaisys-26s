@@ -130,26 +130,21 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
 #endif
 
 #ifdef ENABLE_METAX_API
-	case LLAISYS_DEVICE_METAX: {
-		core::context().setDevice(
-			out->deviceType(),
-			out->deviceId()
-		);
+    case LLAISYS_DEVICE_METAX: {
+        core::context().setDevice(out->deviceType(), out->deviceId());
 
-		auto &runtime =
-			core::context().runtime();
+        auto &runtime = core::context().runtime();
 
-		return metax::rms_norm(
-			out->data(),
-			in->data(),
-			weight->data(),
-			eps,
-			out->dtype(),
-			row_count,
-			column_count,
-			runtime.stream()
-		);
-	}
+        return metax::rms_norm(
+            out->data(),
+            in->data(),
+            weight->data(),
+            eps,
+            out->dtype(),
+            row_count,
+            column_count,
+            runtime.stream());
+    }
 #endif
 
     default:

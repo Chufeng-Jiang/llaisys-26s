@@ -67,18 +67,17 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
+    parser.add_argument(
+        "--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str
+    )
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
         # qlen, kvlen, nh, nkvh, hd
-
         # Tiny MHA correctness.
         (2, 2, 1, 1, 4),
-
         # Tiny GQA + bottom-right causal alignment.
         (5, 11, 4, 2, 8),
-
         # Qwen2 / DeepSeek-R1-Distill-Qwen-1.5B decode-shaped smoke:
         # nh=12, nkvh=2, head_dim=128.
         (1, 16, 12, 2, 128),

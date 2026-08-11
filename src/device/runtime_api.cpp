@@ -79,9 +79,9 @@ const LlaisysRuntimeAPI *getRuntimeAPI(llaisysDeviceType_t device_type) {
 
     case LLAISYS_DEVICE_METAX:
 #ifdef ENABLE_METAX_API
-	    return metax::getRuntimeAPI();
+        return metax::getRuntimeAPI();
 #else
-	    return getUnsupportedRuntimeAPI();
+        return getUnsupportedRuntimeAPI();
 #endif
 
     default:

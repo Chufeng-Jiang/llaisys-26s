@@ -12,7 +12,6 @@
 #include "metax/add_metax.hpp"
 #endif
 
-
 namespace llaisys::ops {
 
 void add(tensor_t c, tensor_t a, tensor_t b) {
@@ -55,24 +54,14 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
 
 #ifdef ENABLE_METAX_API
 
-	case LLAISYS_DEVICE_METAX: {
-		core::context().setDevice(
-			c->deviceType(),
-			c->deviceId()
-		);
+    case LLAISYS_DEVICE_METAX: {
+        core::context().setDevice(c->deviceType(), c->deviceId());
 
-		auto &runtime =
-			core::context().runtime();
+        auto &runtime = core::context().runtime();
 
-		return metax::add(
-			c->data(),
-			a->data(),
-			b->data(),
-			c->dtype(),
-			c->numel(),
-			runtime.stream()
-		);
-	}
+        return metax::add(
+            c->data(), a->data(), b->data(), c->dtype(), c->numel(), runtime.stream());
+    }
 
 #endif
 

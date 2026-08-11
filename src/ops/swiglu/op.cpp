@@ -131,25 +131,14 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
 
 #ifdef ENABLE_METAX_API
     case LLAISYS_DEVICE_METAX: {
-        core::context().setDevice(
-            out->deviceType(),
-            out->deviceId()
-        );
+        core::context().setDevice(out->deviceType(), out->deviceId());
 
-        auto &runtime =
-            core::context().runtime();
+        auto &runtime = core::context().runtime();
 
         return metax::swiglu(
-            out->data(),
-            gate->data(),
-            up->data(),
-            out->dtype(),
-            numel,
-            runtime.stream()
-        );
+            out->data(), gate->data(), up->data(), out->dtype(), numel, runtime.stream());
     }
 #endif
-
 
     default:
         CHECK_ARGUMENT(false, "SwiGLU: unsupported device type.");

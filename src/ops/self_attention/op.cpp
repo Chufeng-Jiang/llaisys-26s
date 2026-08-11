@@ -248,9 +248,7 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
     case LLAISYS_DEVICE_METAX: {
         // Select the tensor's MetaX device before obtaining the
         // device-specific Runtime and stream.
-        core::context().setDevice(
-            attn_val->deviceType(),
-            attn_val->deviceId());
+        core::context().setDevice(attn_val->deviceType(), attn_val->deviceId());
 
         auto &runtime = core::context().runtime();
 
