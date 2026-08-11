@@ -4,10 +4,21 @@
 
 #include <cstddef>
 
+namespace llaisys::device {
+
+class DeviceResource;
+
+} // namespace llaisys::device
+
 namespace llaisys::ops::nvidia {
 
-void argmax(std::byte *max_idx, std::byte *max_val, const std::byte *vals,
-            llaisysDataType_t type, std::size_t numel,
-            unsigned long long *packed_workspace, llaisysStream_t stream);
+void argmax(
+    std::byte *max_idx,
+    std::byte *max_val,
+    const std::byte *vals,
+    llaisysDataType_t type,
+    std::size_t numel,
+    llaisys::device::DeviceResource *resource,
+    llaisysStream_t stream);
 
 } // namespace llaisys::ops::nvidia

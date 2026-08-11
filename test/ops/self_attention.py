@@ -15,7 +15,9 @@ def torch_self_attention(attn_val, query, key, value, scale):
     L, S = query.size(-2), key.size(-2)
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
 
-    temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(diagonal=S-L)
+    temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(
+        diagonal=S - L
+    )
     attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
     attn_bias.to(query.dtype)
 
@@ -65,13 +67,20 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia"], type=str)
+    parser.add_argument(
+        "--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str
+    )
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
         # qlen, kvlen, nh, nkvh, hd
+        # Tiny MHA correctness.
         (2, 2, 1, 1, 4),
+        # Tiny GQA + bottom-right causal alignment.
         (5, 11, 4, 2, 8),
+        # Qwen2 / DeepSeek-R1-Distill-Qwen-1.5B decode-shaped smoke:
+        # nh=12, nkvh=2, head_dim=128.
+        (1, 16, 12, 2, 128),
     ]
     testDtypePrec = [
         # type, atol, rtol

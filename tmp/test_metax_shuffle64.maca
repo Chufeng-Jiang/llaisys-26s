@@ -1,0 +1,439 @@
+#include <mcr/mc_runtime_api.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+
+void check_mc(
+	mcError_t status,
+	const char *what
+) {
+	if (status == mcSuccess) {
+		return;
+	}
+
+	std::fprintf(
+		stderr,
+		"MACA error at %s: %s\n",
+		what,
+		mcGetErrorString(status)
+	);
+
+	std::exit(1);
+}
+
+
+__global__
+void shuffle64_probe_kernel(
+	int *warp_size_output,
+	int *mask_size_output,
+	unsigned long long *mask_value_output,
+	int *shuffle_down_1_output,
+	int *shuffle_down_32_output
+) {
+	const int lane =
+		static_cast<int>(
+			threadIdx.x % warpSize
+		);
+
+	auto active_mask =
+		__activemask();
+
+	if (threadIdx.x == 0) {
+		*warp_size_output =
+			static_cast<int>(
+				warpSize
+			);
+
+		*mask_size_output =
+			static_cast<int>(
+				sizeof(active_mask)
+			);
+
+		*mask_value_output =
+			static_cast<unsigned long long>(
+				active_mask
+			);
+	}
+
+	const int value =
+		lane;
+
+	// --------------------------------------------------------
+	// Neighbor communication.
+	//
+	// Expected for width=64:
+	//
+	// lane 0  -> 1
+	// lane 31 -> 32
+	// lane 32 -> 33
+	// lane 63 -> 63
+	//
+	// --------------------------------------------------------
+
+	const int down_1 =
+		__shfl_down_sync(
+			active_mask,
+			value,
+			1,
+			64
+		);
+
+	// --------------------------------------------------------
+	// Critical cross-half communication.
+	//
+	// If MetaX truly supports a 64-lane shuffle:
+	//
+	// lane 0  -> lane 32
+	// lane 1  -> lane 33
+	// ...
+	// lane 31 -> lane 63
+	//
+	// --------------------------------------------------------
+
+	const int down_32 =
+		__shfl_down_sync(
+			active_mask,
+			value,
+			32,
+			64
+		);
+
+	shuffle_down_1_output[
+		threadIdx.x
+	] = down_1;
+
+	shuffle_down_32_output[
+		threadIdx.x
+	] = down_32;
+}
+
+
+int main() {
+	check_mc(
+		mcSetDevice(0),
+		"mcSetDevice"
+	);
+
+	int *d_warp_size =
+		nullptr;
+
+	int *d_mask_size =
+		nullptr;
+
+	unsigned long long *d_mask_value =
+		nullptr;
+
+	int *d_down_1 =
+		nullptr;
+
+	int *d_down_32 =
+		nullptr;
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_warp_size
+			),
+			sizeof(int)
+		),
+		"mcMalloc warp size"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_mask_size
+			),
+			sizeof(int)
+		),
+		"mcMalloc mask size"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_mask_value
+			),
+			sizeof(
+				unsigned long long
+			)
+		),
+		"mcMalloc mask value"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_down_1
+			),
+			64 * sizeof(int)
+		),
+		"mcMalloc down1"
+	);
+
+	check_mc(
+		mcMalloc(
+			reinterpret_cast<void **>(
+				&d_down_32
+			),
+			64 * sizeof(int)
+		),
+		"mcMalloc down32"
+	);
+
+	shuffle64_probe_kernel
+		<<<1, 64>>>(
+			d_warp_size,
+			d_mask_size,
+			d_mask_value,
+			d_down_1,
+			d_down_32
+		);
+
+	check_mc(
+		mcGetLastError(),
+		"shuffle64 probe launch"
+	);
+
+	check_mc(
+		mcDeviceSynchronize(),
+		"shuffle64 synchronize"
+	);
+
+	int h_warp_size =
+		0;
+
+	int h_mask_size =
+		0;
+
+	unsigned long long h_mask_value =
+		0;
+
+	int h_down_1[64]{};
+	int h_down_32[64]{};
+
+	check_mc(
+		mcMemcpy(
+			&h_warp_size,
+			d_warp_size,
+			sizeof(int),
+			mcMemcpyDeviceToHost
+		),
+		"copy warp size"
+	);
+
+	check_mc(
+		mcMemcpy(
+			&h_mask_size,
+			d_mask_size,
+			sizeof(int),
+			mcMemcpyDeviceToHost
+		),
+		"copy mask size"
+	);
+
+	check_mc(
+		mcMemcpy(
+			&h_mask_value,
+			d_mask_value,
+			sizeof(
+				unsigned long long
+			),
+			mcMemcpyDeviceToHost
+		),
+		"copy mask value"
+	);
+
+	check_mc(
+		mcMemcpy(
+			h_down_1,
+			d_down_1,
+			64 * sizeof(int),
+			mcMemcpyDeviceToHost
+		),
+		"copy down1"
+	);
+
+	check_mc(
+		mcMemcpy(
+			h_down_32,
+			d_down_32,
+			64 * sizeof(int),
+			mcMemcpyDeviceToHost
+		),
+		"copy down32"
+	);
+
+	std::printf(
+		"warpSize              = %d\n",
+		h_warp_size
+	);
+
+	std::printf(
+		"sizeof(__activemask()) = %d bytes\n",
+		h_mask_size
+	);
+
+	std::printf(
+		"__activemask()         = 0x%016llx\n",
+		h_mask_value
+	);
+
+	std::printf(
+		"\nSelected lanes:\n"
+	);
+
+	const int interesting_lanes[] = {
+		0,
+		1,
+		30,
+		31,
+		32,
+		33,
+		62,
+		63,
+	};
+
+	for (int lane : interesting_lanes) {
+		std::printf(
+			"lane=%2d "
+			"down1=%2d "
+			"down32=%2d\n",
+			lane,
+			h_down_1[lane],
+			h_down_32[lane]
+		);
+	}
+
+	// ========================================================
+	// Verification
+	// ========================================================
+
+	bool pass =
+		true;
+
+	if (h_warp_size != 64) {
+		std::printf(
+			"FAIL: expected warpSize=64\n"
+		);
+
+		pass =
+			false;
+	}
+
+	// --------------------------------------------------------
+	// offset = 1
+	// --------------------------------------------------------
+
+	for (
+		int lane = 0;
+		lane < 64;
+		++lane
+	) {
+		const int expected =
+			(lane < 63)
+				? lane + 1
+				: lane;
+
+		if (
+			h_down_1[lane]
+			!= expected
+		) {
+			std::printf(
+				"FAIL down1: "
+				"lane=%d "
+				"got=%d "
+				"expected=%d\n",
+				lane,
+				h_down_1[lane],
+				expected
+			);
+
+			pass =
+				false;
+		}
+	}
+
+	// --------------------------------------------------------
+	// offset = 32
+	// --------------------------------------------------------
+
+	for (
+		int lane = 0;
+		lane < 64;
+		++lane
+	) {
+		const int expected =
+			(lane < 32)
+				? lane + 32
+				: lane;
+
+		if (
+			h_down_32[lane]
+			!= expected
+		) {
+			std::printf(
+				"FAIL down32: "
+				"lane=%d "
+				"got=%d "
+				"expected=%d\n",
+				lane,
+				h_down_32[lane],
+				expected
+			);
+
+			pass =
+				false;
+		}
+	}
+
+	std::printf(
+		"\n========================================\n"
+	);
+
+	if (pass) {
+		std::printf(
+			"MetaX 64-lane shuffle probe PASSED!\n"
+		);
+	} else {
+		std::printf(
+			"MetaX 64-lane shuffle probe FAILED!\n"
+		);
+	}
+
+	std::printf(
+		"========================================\n"
+	);
+
+	check_mc(
+		mcFree(d_warp_size),
+		"free warp size"
+	);
+
+	check_mc(
+		mcFree(d_mask_size),
+		"free mask size"
+	);
+
+	check_mc(
+		mcFree(d_mask_value),
+		"free mask value"
+	);
+
+	check_mc(
+		mcFree(d_down_1),
+		"free down1"
+	);
+
+	check_mc(
+		mcFree(d_down_32),
+		"free down32"
+	);
+
+	return
+		pass
+			? 0
+			: 2;
+}

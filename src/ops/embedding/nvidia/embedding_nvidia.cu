@@ -1,182 +1,131 @@
-#include <cstddef>
-#include <cstdint>
-#include <limits>
+#include "embedding_nvidia.cuh"
 
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
-#include "embedding_nvidia.cuh"
+
+#include "../cuda_compat/embedding_cuda_compat.cuh"
+
+#include <cuda_runtime.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 
 namespace {
 
-using llaisys::device::nvidia::are_aligned;
+namespace cuda_compat = llaisys::ops::cuda_compat;
+
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
+
 using llaisys::device::nvidia::get_warp_aligned_block_size;
-using llaisys::device::nvidia::Packed128;
-using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
-using llaisys::device::nvidia::PACKED_128_BYTES;
-using llaisys::device::nvidia::PACKED_128_ELEMENTS;
+
 using llaisys::device::nvidia::to_cuda_stream;
 
 // ============================================================
-// Scalar kernel
+// NVIDIA Embedding adapter
 // ============================================================
-template <typename T>
-__global__ void embedding_scalar_kernel(T *__restrict__ out,
-                                        const T *__restrict__ weight,
-                                        const std::int64_t *__restrict__ index,
-                                        std::size_t index_count,
-                                        std::size_t len,
-                                        std::size_t vocabulary_size) {
-
-    for (std::size_t output_row = blockIdx.x; output_row < index_count; output_row += gridDim.x) {
-        const std::int64_t signed_weight_row = index[output_row];
-
-        if (signed_weight_row < 0 || static_cast<std::uint64_t>(signed_weight_row) >= static_cast<std::uint64_t>(vocabulary_size)) {
-            continue;
-        }
-
-        const std::size_t weight_row = static_cast<std::size_t>(signed_weight_row);
-        const std::size_t output_offset = output_row * len;
-        const std::size_t weight_offset = weight_row * len;
-
-        for (std::size_t column = threadIdx.x; column < len; column += blockDim.x) {
-            out[output_offset + column] = weight[weight_offset + column];
-        }
-    }
-}
-
-// ============================================================
-// Vectorized kernel
-// Vectorized Embedding implementation.
-// Every thread copies one 128-bit value at a time.
-// This kernel must only be launched when:
-// 1. out is aligned to PACKED_128_ALIGNMENT;
-// 2. weight is aligned to PACKED_128_ALIGNMENT;
-// 3. every row contains a multiple of PACKED_128_BYTES.
+//
+// Shared CUDA-compatible layer owns:
+//
+//   - scalar Embedding kernel
+//   - Packed128 Embedding kernel
+//   - alignment requirements
+//   - per-row logical work
+//
+// NVIDIA adapter owns:
+//
+//   - grid-size cap
+//   - warp-aligned block-size policy
+//   - CUDA stream conversion
+//   - CUDA launch error handling
 // ============================================================
 
 template <typename T>
-__global__ void embedding_vectorized_kernel(T *__restrict__ out, const T *__restrict__ weight,
-                                            const std::int64_t *__restrict__ index, std::size_t index_count,
-                                            std::size_t len, std::size_t vocabulary_size) {
-                                                
-    static_assert(PACKED_128_BYTES % sizeof(T) == 0, "Embedding: data type size must divide the 128-bit pack size.");
+void launch_nvidia_embedding(
+    T *out,
+    const std::int64_t *index,
+    const T *weight,
+    std::size_t numel,
+    std::size_t embedding_length,
+    std::size_t vocabulary_size,
+    cudaStream_t stream) {
+    // ========================================================
+    // Validation
+    // ========================================================
 
-    // Number of T elements stored in one 128-bit pack.
-    //
-    // float:
-    //     16 / 4 = 4 elements
-    //
-    // half and BF16:
-    //     16 / 2 = 8 elements
-    constexpr std::size_t elements_per_pack = PACKED_128_ELEMENTS<T>;
-    const std::size_t packs_per_row = len / elements_per_pack;
-
-    for (std::size_t output_row = blockIdx.x; output_row < index_count; output_row += gridDim.x) {
-        const std::int64_t signed_weight_row = index[output_row];
-
-        if (signed_weight_row < 0 || static_cast<std::uint64_t>(signed_weight_row) >= static_cast<std::uint64_t>(vocabulary_size)) {
-            continue;
-        }
-
-        const std::size_t weight_row = static_cast<std::size_t>(signed_weight_row);
-        T *const output_row_pointer = out + output_row * len;
-        const T *const weight_row_pointer = weight + weight_row * len;
-
-        // The launcher guarantees that both pointers and every
-        // row start satisfy the 128-bit alignment requirement.
-        auto *const packed_output = reinterpret_cast<Packed128 *>(output_row_pointer);
-
-        const auto *const packed_weight = reinterpret_cast<const Packed128 *>(weight_row_pointer);
-
-        // Each thread copies one or more 128-bit packs.
-        for (std::size_t pack_index = threadIdx.x; pack_index < packs_per_row;
-             pack_index += blockDim.x) {
-            packed_output[pack_index] = packed_weight[pack_index];
-        }
-    }
-}
-
-// ============================================================
-// Kernel launcher
-// ============================================================
-
-template <typename T>
-void launch_embedding(T *out, const std::int64_t *index, const T *weight,
-                      std::size_t numel, std::size_t len,
-                      std::size_t vocabulary_size, cudaStream_t stream) {
-    CHECK_ARGUMENT(len > 0,
-                   "Embedding: embedding length must be greater than zero.");
-
-    CHECK_ARGUMENT(numel % len == 0,
-                   "Embedding: output element count must be divisible by "
-                   "embedding length.");
-
-    CHECK_ARGUMENT(numel == 0 || out != nullptr,
-                   "Embedding: output pointer must not be null.");
-
-    CHECK_ARGUMENT(numel == 0 || index != nullptr,
-                   "Embedding: index pointer must not be null.");
-
-    CHECK_ARGUMENT(numel == 0 || weight != nullptr,
-                   "Embedding: weight pointer must not be null.");
-
-    CHECK_ARGUMENT(numel == 0 || vocabulary_size > 0,
-                   "Embedding: vocabulary size must be greater than zero.");
-
-    CHECK_ARGUMENT(len <= std::numeric_limits<std::size_t>::max() / sizeof(T),
-                   "Embedding: row byte size overflows size_t.");
+    CHECK_ARGUMENT(embedding_length > 0, "Embedding: embedding length must be greater than zero.");
 
     CHECK_ARGUMENT(
-        vocabulary_size == 0 || len <= std::numeric_limits<std::size_t>::max() / vocabulary_size,
+        numel % embedding_length == 0,
+        "Embedding: output element count must be divisible by "
+        "embedding length.");
+
+    CHECK_ARGUMENT(numel == 0 || out != nullptr, "Embedding: output pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || index != nullptr, "Embedding: index pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || weight != nullptr, "Embedding: weight pointer must not be null.");
+
+    CHECK_ARGUMENT(
+        numel == 0 || vocabulary_size > 0, "Embedding: vocabulary size must be greater than zero.");
+
+    CHECK_ARGUMENT(
+        embedding_length <= std::numeric_limits<std::size_t>::max() / sizeof(T),
+        "Embedding: row byte size overflows size_t.");
+
+    CHECK_ARGUMENT(
+        vocabulary_size == 0
+            || embedding_length <= std::numeric_limits<std::size_t>::max() / vocabulary_size,
         "Embedding: weight element count overflows size_t.");
 
-    // CUDA cannot launch a kernel with zero blocks.
-    if (numel == 0) {
-        return;
-    }
+    if (numel == 0) { return; }
 
-    const std::size_t index_count = numel / len;
+    const std::size_t index_count = numel / embedding_length;
 
-    const std::size_t row_bytes = len * sizeof(T);
+    // ========================================================
+    // Shared path selection
+    // ========================================================
 
-    // This kernel assigns one logical output row to each block.
+    const bool use_vectorized_kernel
+        = cuda_compat::can_use_vectorized_embedding<T>(out, weight, embedding_length);
+
+    const std::size_t row_work_items
+        = cuda_compat::get_embedding_row_work_items<T>(embedding_length, use_vectorized_kernel);
+
+    // ========================================================
+    // NVIDIA-specific launch tuning
+    // ========================================================
+
+    // One logical output row is initially assigned to one block.
     //
-    // The row-level grid-stride loop allows the grid size to be
-    // capped without leaving any rows unprocessed.
-    const std::size_t grid_size = index_count < CUDA_DEFAULT_MAX_GRID_SIZE
-                                    ? index_count
-                                    : CUDA_DEFAULT_MAX_GRID_SIZE;
+    // The shared kernel contains a row-level grid-stride loop,
+    // so the physical grid can safely be capped.
 
-    // Base pointer alignment.
-    const bool base_addresses_aligned = are_aligned<PACKED_128_ALIGNMENT>(out, weight);
+    const std::size_t grid_size
+        = index_count < CUDA_DEFAULT_MAX_GRID_SIZE ? index_count : CUDA_DEFAULT_MAX_GRID_SIZE;
 
-    // Even when the base pointer is aligned, every subsequent
-    // row must also start at an aligned address.
-    //
-    // Therefore, the row stride in bytes must be a multiple of
-    // the 128-bit pack size.
-    const bool every_row_aligned = row_bytes % PACKED_128_BYTES == 0;
+    const unsigned int block_size = get_warp_aligned_block_size(row_work_items);
 
-    const bool use_vectorized_kernel = base_addresses_aligned && every_row_aligned;
+    // ========================================================
+    // Shared CUDA-compatible kernel
+    // ========================================================
 
-    if (use_vectorized_kernel) {
-        const std::size_t packs_per_row = row_bytes / PACKED_128_BYTES;
+    cuda_compat::launch_embedding_kernel<T>(
+        out,
+        index,
+        weight,
+        index_count,
+        embedding_length,
+        vocabulary_size,
+        block_size,
+        grid_size,
+        use_vectorized_kernel,
+        stream);
 
-        const unsigned int block_size = get_warp_aligned_block_size(packs_per_row);
-
-        embedding_vectorized_kernel<T>
-            <<<static_cast<unsigned int>(grid_size), block_size, 0, stream>>>(
-                out, weight, index, index_count, len, vocabulary_size);
-
-    } else {
-        const unsigned int block_size = get_warp_aligned_block_size(len);
-
-        embedding_scalar_kernel<T>
-            <<<static_cast<unsigned int>(grid_size), block_size, 0, stream>>>(
-                out, weight, index, index_count, len, vocabulary_size);
-    }
+    // ========================================================
+    // NVIDIA-specific launch error handling
+    // ========================================================
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -184,33 +133,34 @@ void launch_embedding(T *out, const std::int64_t *index, const T *weight,
 } // namespace
 
 // ============================================================
-// Public NVIDIA backend interface
+// Public NVIDIA backend
 // ============================================================
 
 namespace llaisys::ops::nvidia {
 
-void embedding(std::byte *out, const std::byte *index, const std::byte *weight,
-               llaisysDataType_t type, std::size_t numel, std::size_t len,
-               std::size_t vocabulary_size, llaisysStream_t stream) {
-                
-    const cudaStream_t cuda_stream = llaisys::device::nvidia::to_cuda_stream(stream);
+void embedding(
+    std::byte *out,
+    const std::byte *index,
+    const std::byte *weight,
+    llaisysDataType_t type,
+    std::size_t numel,
+    std::size_t len,
+    std::size_t vocabulary_size,
+    llaisysStream_t stream) {
+    const cudaStream_t cuda_stream = to_cuda_stream(stream);
 
-    return llaisys::device::nvidia::dispatch_cuda_dtype(
-        type,
-        [&](auto tag) {
-            using T = typename decltype(tag)::type;
+    return llaisys::device::nvidia::dispatch_cuda_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
 
-            return launch_embedding<T>(
-                reinterpret_cast<T *>(out),
-                reinterpret_cast<const std::int64_t *>(index),
-                reinterpret_cast<const T *>(weight),
-                numel,
-                len,
-                vocabulary_size,
-                cuda_stream
-            );
-        }
-    );
+        return launch_nvidia_embedding<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const std::int64_t *>(index),
+            reinterpret_cast<const T *>(weight),
+            numel,
+            len,
+            vocabulary_size,
+            cuda_stream);
+    });
 }
 
 } // namespace llaisys::ops::nvidia

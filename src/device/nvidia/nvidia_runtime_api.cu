@@ -13,71 +13,66 @@ namespace {
 // Convert the LLAISYS memcpy direction into the corresponding
 // CUDA Runtime API memcpy direction.
 cudaMemcpyKind toCudaMemcpyKind(llaisysMemcpyKind_t kind) {
-  switch (kind) {
+    switch (kind) {
     case LLAISYS_MEMCPY_H2D:
-      return cudaMemcpyHostToDevice;
+        return cudaMemcpyHostToDevice;
 
     case LLAISYS_MEMCPY_D2H:
-      return cudaMemcpyDeviceToHost;
+        return cudaMemcpyDeviceToHost;
 
     case LLAISYS_MEMCPY_D2D:
-      return cudaMemcpyDeviceToDevice;
+        return cudaMemcpyDeviceToDevice;
 
     case LLAISYS_MEMCPY_H2H:
-      return cudaMemcpyHostToHost;
+        return cudaMemcpyHostToHost;
 
     default:
-      throw std::invalid_argument("Unknown NVIDIA memory copy kind.");
-  }
+        throw std::invalid_argument("Unknown NVIDIA memory copy kind.");
+    }
 }
 
-}  // namespace
-
+} // namespace
 
 // ============================================================
 // Device management
 // ============================================================
 
 int getDeviceCount() {
-  int count = 0;
+    int count = 0;
 
-  CUDA_CHECK(cudaGetDeviceCount(&count));
+    CUDA_CHECK(cudaGetDeviceCount(&count));
 
-  return count;
+    return count;
 }
 
 void setDevice(int device_id) { CUDA_CHECK(cudaSetDevice(device_id)); }
 
 void deviceSynchronize() { CUDA_CHECK(cudaDeviceSynchronize()); }
 
-
-
 // ============================================================
 // Stream management
 // ============================================================
 
 llaisysStream_t createStream() {
-  cudaStream_t stream = nullptr;
+    cudaStream_t stream = nullptr;
 
-  CUDA_CHECK(cudaStreamCreate(&stream));
+    CUDA_CHECK(cudaStreamCreate(&stream));
 
-  return from_cuda_stream(stream);
+    return from_cuda_stream(stream);
 }
 
 void destroyStream(llaisysStream_t stream) {
-  // nullptr represents the default CUDA stream.
-  // The default stream was not created by cudaStreamCreate(),
-  // so it must not be destroyed here.
-  if (stream == nullptr) {
-    return;
-  }
+    // nullptr represents the default CUDA stream.
+    // The default stream was not created by cudaStreamCreate(),
+    // so it must not be destroyed here.
+    if (stream == nullptr) { return; }
 
-  CUDA_CHECK(cudaStreamDestroy(to_cuda_stream(stream)));
+    CUDA_CHECK(cudaStreamDestroy(to_cuda_stream(stream)));
 }
 
 void streamSynchronize(llaisysStream_t stream) {
-  // Passing nullptr synchronizes the default CUDA stream.
-  CUDA_CHECK(cudaStreamSynchronize(to_cuda_stream(stream)));
+    // Passing nullptr synchronizes the default CUDA stream.
+    CUDA_CHECK(cudaStreamSynchronize(to_cuda_stream(stream)));
 }
 
 // ============================================================
@@ -85,23 +80,19 @@ void streamSynchronize(llaisysStream_t stream) {
 // ============================================================
 
 void *mallocDevice(std::size_t size) {
-  if (size == 0) {
-    return nullptr;
-  }
+    if (size == 0) { return nullptr; }
 
-  void *ptr = nullptr;
+    void *ptr = nullptr;
 
-  CUDA_CHECK(cudaMalloc(&ptr, size));
+    CUDA_CHECK(cudaMalloc(&ptr, size));
 
-  return ptr;
+    return ptr;
 }
 
 void freeDevice(void *ptr) {
-  if (ptr == nullptr) {
-    return;
-  }
+    if (ptr == nullptr) { return; }
 
-  CUDA_CHECK(cudaFree(ptr));
+    CUDA_CHECK(cudaFree(ptr));
 }
 
 // ============================================================
@@ -109,80 +100,71 @@ void freeDevice(void *ptr) {
 // ============================================================
 
 void *mallocHost(std::size_t size) {
-  if (size == 0) {
-    return nullptr;
-  }
+    if (size == 0) { return nullptr; }
 
-  void *ptr = nullptr;
+    void *ptr = nullptr;
 
-  CUDA_CHECK(cudaMallocHost(&ptr, size));
+    CUDA_CHECK(cudaMallocHost(&ptr, size));
 
-  return ptr;
+    return ptr;
 }
 
 void freeHost(void *ptr) {
-  if (ptr == nullptr) {
-    return;
-  }
+    if (ptr == nullptr) { return; }
 
-  CUDA_CHECK(cudaFreeHost(ptr));
+    CUDA_CHECK(cudaFreeHost(ptr));
 }
 
 // ============================================================
 // Synchronous memory copy
 // ============================================================
 
-void memcpySync(void *dst, const void *src, std::size_t size,
-                llaisysMemcpyKind_t kind) {
-  if (size == 0) {
-    return;
-  }
+void memcpySync(void *dst, const void *src, std::size_t size, llaisysMemcpyKind_t kind) {
+    if (size == 0) { return; }
 
-  CHECK_ARGUMENT(dst != nullptr, "NVIDIA memcpySync: dst must not be null.");
+    CHECK_ARGUMENT(dst != nullptr, "NVIDIA memcpySync: dst must not be null.");
 
-  CHECK_ARGUMENT(src != nullptr, "NVIDIA memcpySync: src must not be null.");
+    CHECK_ARGUMENT(src != nullptr, "NVIDIA memcpySync: src must not be null.");
 
-  CUDA_CHECK(cudaMemcpy(dst, src, size, toCudaMemcpyKind(kind)));
+    CUDA_CHECK(cudaMemcpy(dst, src, size, toCudaMemcpyKind(kind)));
 }
 
 // ============================================================
 // Asynchronous memory copy
 // ============================================================
 
-void memcpyAsync(void *dst, const void *src, std::size_t size,
-                 llaisysMemcpyKind_t kind, llaisysStream_t stream) {
-  if (size == 0) {
-    return;
-  }
+void memcpyAsync(
+    void *dst,
+    const void *src,
+    std::size_t size,
+    llaisysMemcpyKind_t kind,
+    llaisysStream_t stream) {
+    if (size == 0) { return; }
 
-  CHECK_ARGUMENT(dst != nullptr, "NVIDIA memcpyAsync: dst must not be null.");
+    CHECK_ARGUMENT(dst != nullptr, "NVIDIA memcpyAsync: dst must not be null.");
 
-  CHECK_ARGUMENT(src != nullptr, "NVIDIA memcpyAsync: src must not be null.");
+    CHECK_ARGUMENT(src != nullptr, "NVIDIA memcpyAsync: src must not be null.");
 
-  CUDA_CHECK(cudaMemcpyAsync(dst, src, size, toCudaMemcpyKind(kind),
-                             to_cuda_stream(stream)));
+    CUDA_CHECK(cudaMemcpyAsync(dst, src, size, toCudaMemcpyKind(kind), to_cuda_stream(stream)));
 }
 
 // ============================================================
 // NVIDIA Runtime API table
 // ============================================================
-static const LlaisysRuntimeAPI RUNTIME_API = {
-    &getDeviceCount,
-    &setDevice,
-    &deviceSynchronize,
-    &createStream,
-    &destroyStream,
-    &streamSynchronize,
-    &mallocDevice,
-    &freeDevice,
-    &mallocHost,
-    &freeHost,
-    &memcpySync,
-    &memcpyAsync};
+static const LlaisysRuntimeAPI RUNTIME_API = {&getDeviceCount,
+                                              &setDevice,
+                                              &deviceSynchronize,
+                                              &createStream,
+                                              &destroyStream,
+                                              &streamSynchronize,
+                                              &mallocDevice,
+                                              &freeDevice,
+                                              &mallocHost,
+                                              &freeHost,
+                                              &memcpySync,
+                                              &memcpyAsync};
 
 } // namespace runtime_api
 
-const LlaisysRuntimeAPI *getRuntimeAPI() {
-    return &runtime_api::RUNTIME_API;
-}
+const LlaisysRuntimeAPI *getRuntimeAPI() { return &runtime_api::RUNTIME_API; }
 } // namespace llaisys::device::nvidia

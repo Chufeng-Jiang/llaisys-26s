@@ -8,10 +8,6 @@ namespace llaisys::ops::cpu {
 //
 // The implementation performs runtime SIMD dispatch on supported x86
 // compilers and falls back to a portable scalar implementation elsewhere.
-float sdot(
-	const float *x,
-	const float *y,
-	std::size_t count
-);
+float sdot(const float *x, const float *y, std::size_t count);
 
 } // namespace llaisys::ops::cpu

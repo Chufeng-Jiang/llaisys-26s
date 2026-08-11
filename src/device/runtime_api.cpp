@@ -1,89 +1,93 @@
 #include "runtime_api.hpp"
 
+#include "../utils.hpp"
+
+#include <cstddef>
+
 namespace llaisys::device {
 
-int getDeviceCount() {
-    return 0;
-}
+namespace {
 
-void setDevice(int) {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
+int unsupportedGetDeviceCount() { return 0; }
 
-void deviceSynchronize() {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
+void unsupportedSetDevice(int) { EXCEPTION_UNSUPPORTED_DEVICE; }
 
-llaisysStream_t createStream() {
+void unsupportedDeviceSynchronize() { EXCEPTION_UNSUPPORTED_DEVICE; }
+
+llaisysStream_t unsupportedCreateStream() {
     EXCEPTION_UNSUPPORTED_DEVICE;
     return nullptr;
 }
 
-void destroyStream(llaisysStream_t stream) {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
-void streamSynchronize(llaisysStream_t stream) {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
+void unsupportedDestroyStream(llaisysStream_t) { EXCEPTION_UNSUPPORTED_DEVICE; }
 
-void *mallocDevice(size_t size) {
+void unsupportedStreamSynchronize(llaisysStream_t) { EXCEPTION_UNSUPPORTED_DEVICE; }
+
+void *unsupportedMallocDevice(std::size_t) {
     EXCEPTION_UNSUPPORTED_DEVICE;
     return nullptr;
 }
 
-void freeDevice(void *ptr) {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
+void unsupportedFreeDevice(void *) { EXCEPTION_UNSUPPORTED_DEVICE; }
 
-void *mallocHost(size_t size) {
+void *unsupportedMallocHost(std::size_t) {
     EXCEPTION_UNSUPPORTED_DEVICE;
     return nullptr;
 }
 
-void freeHost(void *ptr) {
+void unsupportedFreeHost(void *) { EXCEPTION_UNSUPPORTED_DEVICE; }
+
+void unsupportedMemcpySync(void *, const void *, std::size_t, llaisysMemcpyKind_t) {
     EXCEPTION_UNSUPPORTED_DEVICE;
 }
 
-void memcpySync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind) {
+void unsupportedMemcpyAsync(
+    void *, const void *, std::size_t, llaisysMemcpyKind_t, llaisysStream_t) {
     EXCEPTION_UNSUPPORTED_DEVICE;
 }
 
-void memcpyAsync(void *dst, const void *src, size_t size, llaisysMemcpyKind_t kind, llaisysStream_t stream) {
-    EXCEPTION_UNSUPPORTED_DEVICE;
-}
+const LlaisysRuntimeAPI UNSUPPORTED_RUNTIME_API = {
+    &unsupportedGetDeviceCount,
+    &unsupportedSetDevice,
+    &unsupportedDeviceSynchronize,
+    &unsupportedCreateStream,
+    &unsupportedDestroyStream,
+    &unsupportedStreamSynchronize,
+    &unsupportedMallocDevice,
+    &unsupportedFreeDevice,
+    &unsupportedMallocHost,
+    &unsupportedFreeHost,
+    &unsupportedMemcpySync,
+    &unsupportedMemcpyAsync,
+};
 
-static const LlaisysRuntimeAPI NOOP_RUNTIME_API = {
-    &getDeviceCount,
-    &setDevice,
-    &deviceSynchronize,
-    &createStream,
-    &destroyStream,
-    &streamSynchronize,
-    &mallocDevice,
-    &freeDevice,
-    &mallocHost,
-    &freeHost,
-    &memcpySync,
-    &memcpyAsync};
+} // namespace
 
-const LlaisysRuntimeAPI *getUnsupportedRuntimeAPI() {
-    return &NOOP_RUNTIME_API;
-}
+const LlaisysRuntimeAPI *getUnsupportedRuntimeAPI() { return &UNSUPPORTED_RUNTIME_API; }
 
 const LlaisysRuntimeAPI *getRuntimeAPI(llaisysDeviceType_t device_type) {
-    // Implement for all device types
     switch (device_type) {
     case LLAISYS_DEVICE_CPU:
-        return llaisys::device::cpu::getRuntimeAPI();
+        return cpu::getRuntimeAPI();
+
     case LLAISYS_DEVICE_NVIDIA:
 #ifdef ENABLE_NVIDIA_API
-        return llaisys::device::nvidia::getRuntimeAPI();
+        return nvidia::getRuntimeAPI();
 #else
         return getUnsupportedRuntimeAPI();
 #endif
+
+    case LLAISYS_DEVICE_METAX:
+#ifdef ENABLE_METAX_API
+        return metax::getRuntimeAPI();
+#else
+        return getUnsupportedRuntimeAPI();
+#endif
+
     default:
         EXCEPTION_UNSUPPORTED_DEVICE;
         return nullptr;
     }
 }
+
 } // namespace llaisys::device

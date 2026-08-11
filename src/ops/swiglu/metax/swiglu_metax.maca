@@ -1,0 +1,88 @@
+#include "../../../device/metax/metax_common.hpp"
+#include "../../../device/metax/metax_dtype.hpp"
+#include "../../../utils.hpp"
+
+#include "../cuda_compat/swiglu_cuda_compat.cuh"
+#include "swiglu_metax.hpp"
+
+#include <cstddef>
+
+namespace {
+
+namespace cuda_compat = llaisys::ops::cuda_compat;
+
+using llaisys::device::metax::dispatch_metax_dtype;
+
+template <typename T>
+void launch_metax_swiglu(T *out, const T *gate, const T *up, std::size_t numel, mcStream_t stream) {
+    if (numel == 0) { return; }
+
+    // ========================================================
+    // Select shared scalar/packed implementation
+    // ========================================================
+
+    const bool use_packed_kernel = cuda_compat::can_use_packed_swiglu<T>(out, gate, up, numel);
+
+    // ========================================================
+    // MetaX launch configuration
+    // ========================================================
+
+    constexpr std::size_t block_size = 256;
+
+    const std::size_t work_items = cuda_compat::get_swiglu_work_items<T>(numel, use_packed_kernel);
+
+    const std::size_t grid_size = (work_items + block_size - 1) / block_size;
+
+    // ========================================================
+    // Shared CUDA-compatible kernel
+    // ========================================================
+
+    cuda_compat::launch_swiglu_kernel<T>(
+        out,
+        gate,
+        up,
+        numel,
+        static_cast<unsigned int>(block_size),
+        grid_size,
+        use_packed_kernel,
+        stream);
+
+    // ========================================================
+    // MetaX-specific launch error checking
+    // ========================================================
+
+    MC_CHECK(mcGetLastError());
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void swiglu(
+    std::byte *out,
+    const std::byte *gate,
+    const std::byte *up,
+    llaisysDataType_t type,
+    std::size_t numel,
+    llaisysStream_t stream) {
+    CHECK_ARGUMENT(numel == 0 || out != nullptr, "SwiGLU: output pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || gate != nullptr, "SwiGLU: gate pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || up != nullptr, "SwiGLU: up pointer must not be null.");
+
+    const mcStream_t mc_stream = reinterpret_cast<mcStream_t>(stream);
+
+    return dispatch_metax_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
+
+        return launch_metax_swiglu<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const T *>(gate),
+            reinterpret_cast<const T *>(up),
+            numel,
+            mc_stream);
+    });
+}
+
+} // namespace llaisys::ops::metax

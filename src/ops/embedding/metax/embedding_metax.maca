@@ -1,0 +1,148 @@
+#include "../../../device/metax/metax_common.hpp"
+#include "../../../device/metax/metax_dtype.hpp"
+#include "../../../utils.hpp"
+
+#include "../cuda_compat/embedding_cuda_compat.cuh"
+#include "embedding_metax.hpp"
+
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+
+namespace {
+
+namespace cuda_compat = llaisys::ops::cuda_compat;
+
+using llaisys::device::metax::dispatch_metax_dtype;
+
+template <typename T>
+void launch_metax_embedding(
+    T *out,
+    const std::int64_t *index,
+    const T *weight,
+    std::size_t numel,
+    std::size_t embedding_length,
+    std::size_t vocabulary_size,
+    mcStream_t stream) {
+    // ========================================================
+    // Validation
+    // ========================================================
+
+    CHECK_ARGUMENT(embedding_length > 0, "Embedding: embedding length must be greater than zero.");
+
+    CHECK_ARGUMENT(
+        numel % embedding_length == 0,
+        "Embedding: output element count must be divisible by "
+        "embedding length.");
+
+    CHECK_ARGUMENT(numel == 0 || out != nullptr, "Embedding: output pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || index != nullptr, "Embedding: index pointer must not be null.");
+
+    CHECK_ARGUMENT(numel == 0 || weight != nullptr, "Embedding: weight pointer must not be null.");
+
+    CHECK_ARGUMENT(
+        numel == 0 || vocabulary_size > 0, "Embedding: vocabulary size must be greater than zero.");
+
+    CHECK_ARGUMENT(
+        embedding_length <= std::numeric_limits<std::size_t>::max() / sizeof(T),
+        "Embedding: row byte size overflows size_t.");
+
+    CHECK_ARGUMENT(
+        vocabulary_size == 0
+            || embedding_length <= std::numeric_limits<std::size_t>::max() / vocabulary_size,
+        "Embedding: weight element count overflows size_t.");
+
+    if (numel == 0) { return; }
+
+    const std::size_t index_count = numel / embedding_length;
+
+    // ========================================================
+    // Select shared scalar/vectorized implementation
+    // ========================================================
+
+    const bool use_vectorized_kernel
+        = cuda_compat::can_use_vectorized_embedding<T>(out, weight, embedding_length);
+
+    const std::size_t row_work_items
+        = cuda_compat::get_embedding_row_work_items<T>(embedding_length, use_vectorized_kernel);
+
+    // ========================================================
+    // MetaX launch configuration
+    // ========================================================
+    //
+    // One logical output row is assigned to one block.
+    //
+    // Keep the first portable MetaX baseline simple:
+    //
+    //     block_size = 256
+    //     grid_size  = index_count
+    //
+    // The shared kernel itself contains a row-level
+    // grid-stride loop, so a MetaX-specific grid cap can be
+    // introduced later if profiling shows that it is useful.
+    // ========================================================
+
+    constexpr std::size_t block_size = 256;
+
+    CHECK_ARGUMENT(row_work_items > 0, "Embedding: row work item count must be greater than zero.");
+
+    CHECK_ARGUMENT(
+        index_count <= static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()),
+        "Embedding: MetaX grid size exceeds supported launch range.");
+
+    const std::size_t grid_size = index_count;
+
+    // ========================================================
+    // Shared CUDA-compatible kernel
+    // ========================================================
+
+    cuda_compat::launch_embedding_kernel<T>(
+        out,
+        index,
+        weight,
+        index_count,
+        embedding_length,
+        vocabulary_size,
+        static_cast<unsigned int>(block_size),
+        grid_size,
+        use_vectorized_kernel,
+        stream);
+
+    // ========================================================
+    // MetaX-specific launch error checking
+    // ========================================================
+
+    MC_CHECK(mcGetLastError());
+}
+
+} // namespace
+
+namespace llaisys::ops::metax {
+
+void embedding(
+    std::byte *out,
+    const std::byte *index,
+    const std::byte *weight,
+    llaisysDataType_t type,
+    std::size_t numel,
+    std::size_t len,
+    std::size_t vocabulary_size,
+    llaisysStream_t stream) {
+    const mcStream_t mc_stream = reinterpret_cast<mcStream_t>(stream);
+
+    return dispatch_metax_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
+
+        return launch_metax_embedding<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const std::int64_t *>(index),
+            reinterpret_cast<const T *>(weight),
+            numel,
+            len,
+            vocabulary_size,
+            mc_stream);
+    });
+}
+
+} // namespace llaisys::ops::metax

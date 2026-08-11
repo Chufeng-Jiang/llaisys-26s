@@ -6,14 +6,13 @@
 namespace llaisys::ops::cpu {
 
 void rearrange(
-	std::byte *out,
-	const std::byte *in,
-	llaisysDataType_t type,
-	std::size_t numel,
-	const std::vector<std::size_t> &out_shape,
-	const std::vector<std::ptrdiff_t> &out_strides,
-	const std::vector<std::size_t> &in_shape,
-	const std::vector<std::ptrdiff_t> &in_strides
-);
+    std::byte *out,
+    const std::byte *in,
+    llaisysDataType_t type,
+    std::size_t numel,
+    const std::vector<std::size_t> &out_shape,
+    const std::vector<std::ptrdiff_t> &out_strides,
+    const std::vector<std::size_t> &in_shape,
+    const std::vector<std::ptrdiff_t> &in_strides);
 
 } // namespace llaisys::ops::cpu

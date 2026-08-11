@@ -1,0 +1,206 @@
+# LLAISYS Implementation Report
+
+## Overview
+
+The required LLAISYS implementation has been completed, including:
+
+* CPU backend
+* NVIDIA CUDA backend
+* MetaX backend
+* Required operators:
+
+  * add
+  * argmax
+  * embedding
+  * linear
+  * rms_norm
+  * rope
+  * self_attention
+  * swiglu
+* FP32 / FP16 / BF16 support where applicable
+* Qwen2 / DeepSeek-R1-Distill-Qwen-1.5B inference
+* KV Cache
+* Python bindings and device selection
+
+The implementation has been reproduced on CPU, NVIDIA GPU, and MetaX GPU.
+
+## Supported Platforms
+
+| Platform     | Tested Hardware / Environment                                                          | Status      |
+| ------------ | -------------------------------------------------------------------------------------- | ----------- |
+| CPU          | Intel Core i7-12700H, x86_64, WSL/Linux                                                | ✅ Supported |
+| NVIDIA CUDA  | NVIDIA GeForce RTX 3080 Ti Laptop GPU, 16 GB VRAM, Driver 596.08, CUDA Driver API 13.2 | ✅ Supported |
+| MetaX / MACA | MetaX C500, 64 GB physical GPU memory, MACA 3.2.1.10, Driver 3.8.30                    | ✅ Supported |
+
+### Platform Details
+
+* **CPU**
+
+  * Processor: 12th Gen Intel Core i7-12700H
+  * Architecture: x86_64
+  * Tested under WSL/Linux
+  * Runtime, operator tests, and end-to-end inference passed.
+
+* **NVIDIA**
+
+  * GPU: NVIDIA GeForce RTX 3080 Ti Laptop GPU
+  * GPU Memory: 16 GB
+  * NVIDIA Driver: 596.08
+  * CUDA version reported by `nvidia-smi`: 13.2
+  * Runtime, operator tests, and end-to-end inference passed.
+
+* **MetaX**
+
+  * GPU: MetaX C500
+  * Physical GPU Memory: 64 GB
+  * Tested sGPU quota: 16 GB
+  * MACA Version: 3.2.1.10
+  * Kernel Mode Driver: 3.8.30
+  * MX-SMI Version: 2.2.9
+  * Runtime, operator tests, and end-to-end inference passed.
+
+
+## Platform Results
+
+| Platform     | Runtime | Operators | End-to-End Inference | Status    |
+| ------------ | ------- | --------- | -------------------- | --------- |
+| CPU          | ✅       | ✅         | ✅                    | Passed |
+| NVIDIA CUDA  | ✅       | ✅         | ✅                    | Passed |
+| MetaX / MACA | ✅       | ✅         | ✅                    | Passed |
+
+Test model:
+
+```text
+deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+```
+
+---
+
+## CPU / NVIDIA Reproduction
+
+### Build
+
+```bash
+cd ~/llaisys-26s
+
+rm -rf .xmake
+rm -rf build
+
+xmake f -c \
+    --nv-gpu=y \
+    -cv
+
+xmake -r -vD 2>&1 \
+    | tee /tmp/cuda12-build.log
+
+xmake install
+
+pip install ./python/
+```
+
+### CPU Tests
+
+```bash
+python test/test_runtime.py --device cpu
+
+python test/ops/add.py --device cpu
+python test/ops/argmax.py --device cpu
+python test/ops/embedding.py --device cpu
+python test/ops/linear.py --device cpu
+python test/ops/rms_norm.py --device cpu
+python test/ops/rope.py --device cpu
+python test/ops/self_attention.py --device cpu
+python test/ops/swiglu.py --device cpu
+
+python test/test_infer.py \
+    --model "$MODEL_PATH" \
+    --test \
+    --device cpu \
+    --prompt "Who are you?" \
+    --max_steps 70
+```
+
+### NVIDIA Tests
+
+```bash
+python test/test_runtime.py --device nvidia
+
+python test/ops/add.py --device nvidia
+python test/ops/argmax.py --device nvidia
+python test/ops/embedding.py --device nvidia
+python test/ops/linear.py --device nvidia
+python test/ops/rms_norm.py --device nvidia
+python test/ops/rope.py --device nvidia
+python test/ops/self_attention.py --device nvidia
+python test/ops/swiglu.py --device nvidia
+
+python test/test_infer.py \
+    --model "$MODEL_PATH" \
+    --test \
+    --device nvidia \
+    --prompt "Who are you?" \
+    --max_steps 70
+```
+
+---
+
+## MetaX Reproduction
+
+### Build
+
+```bash
+cd /data/llaisys-26s
+
+export MACA_PATH=/opt/maca
+export XMAKE_ROOT=y
+export PYTHONPATH=/data/llaisys-26s/python:$PYTHONPATH
+
+xmake f -c \
+    --metax-gpu=y \
+    -cv
+
+xmake -r -vD 2>&1 | tee /data/metax-build.log
+
+xmake install
+
+pip install -e ./python
+```
+
+### Tests
+
+```bash
+python test/test_runtime.py --device metax
+
+python test/ops/add.py --device metax
+python test/ops/argmax.py --device metax
+python test/ops/embedding.py --device metax
+python test/ops/linear.py --device metax
+python test/ops/rms_norm.py --device metax
+python test/ops/rope.py --device metax
+python test/ops/self_attention.py --device metax
+python test/ops/swiglu.py --device metax
+```
+
+End-to-end inference:
+
+```bash
+python test/test_infer.py \
+    --model /data/huggingface_home/hub/models--deepseek-ai--DeepSeek-R1-Distill-Qwen-1.5B/snapshots/ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562 \
+    --test \
+    --device metax \
+    --prompt "Who are you?" \
+    --max_steps 70
+```
+
+---
+
+## Reproduction Results
+
+All listed runtime tests, operator tests, and end-to-end inference tests were successfully reproduced on their corresponding platforms.
+
+| Test                 | CPU | NVIDIA | MetaX |
+| -------------------- | --- | ------ | ----- |
+| Runtime              | ✅   | ✅      | ✅     |
+| Operators            | ✅   | ✅      | ✅     |
+| End-to-End Inference | ✅   | ✅      | ✅     |
+

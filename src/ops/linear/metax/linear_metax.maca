@@ -1,0 +1,913 @@
+#include "linear_metax.hpp"
+
+#include "../../../device/metax/metax_common.hpp"
+#include "../../../device/metax/metax_dtype.hpp"
+#include "../../../utils.hpp"
+
+#include "../cuda_compat/linear_cuda_compat.cuh"
+
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#include <mcblas/mcblas.h>
+#include <mcblas/mcblasLt.h>
+#include <mcr/mc_runtime_api.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+
+namespace {
+
+namespace cuda_compat = llaisys::ops::cuda_compat;
+
+using llaisys::device::metax::dispatch_metax_dtype;
+using llaisys::utils::checked_product;
+
+// ============================================================
+// Portable bias-broadcast launch policy
+// ============================================================
+
+inline constexpr unsigned int METAX_LINEAR_BLOCK_SIZE = 256;
+
+inline constexpr std::size_t METAX_LINEAR_MAX_GRID_SIZE = 65535;
+
+std::size_t get_metax_linear_grid_size(std::size_t work_items) {
+    if (work_items == 0) { return 0; }
+
+    const std::size_t uncapped
+        = (work_items + static_cast<std::size_t>(METAX_LINEAR_BLOCK_SIZE) - 1)
+        / static_cast<std::size_t>(METAX_LINEAR_BLOCK_SIZE);
+
+    return std::min(uncapped, METAX_LINEAR_MAX_GRID_SIZE);
+}
+
+bool should_auto_use_fused_linear(llaisysDataType_t type, std::size_t row_count, const void *bias) {
+    if (bias == nullptr) { return false; }
+
+    switch (type) {
+    case LLAISYS_DTYPE_F16:
+    case LLAISYS_DTYPE_BF16:
+        // ----------------------------------------------------
+        // Measured on MetaX across:
+        //
+        //     N=4096, K=4096
+        //     N=1536, K=1536   (Q projection)
+        //     N=256,  K=1536   (K/V projection)
+        //
+        // FP16/BF16 consistently show:
+        //
+        //     M=1:
+        //         portable wins
+        //
+        //     M>=2:
+        //         fused mcBLASLt bias epilogue wins
+        //
+        // Therefore row_count=2 is the current robust
+        // low-precision crossover.
+        // ----------------------------------------------------
+
+        return row_count >= 2;
+
+    case LLAISYS_DTYPE_F32:
+        // ----------------------------------------------------
+        // F32 does not yet admit a robust shape-independent
+        // policy.
+        //
+        // q_proj and 4096x4096 favor fusion, while the
+        // narrow kv_proj shape exhibits non-monotonic
+        // mcBLASLt performance across M.
+        //
+        // Keep AUTO conservative until algorithm-selection
+        // behavior is characterized.
+        // ----------------------------------------------------
+
+        return false;
+
+    default:
+        return false;
+    }
+}
+
+// ============================================================
+// Linear implementation policy
+//
+// LLAISYS_METAX_LINEAR_IMPL
+//
+// auto:
+//     bias != nullptr
+//         -> try mcBLASLt fused bias
+//         -> fallback to portable if unsupported
+//
+//     bias == nullptr
+//         -> portable mcblasGemmEx
+//
+// portable:
+//     shared bias broadcast
+//     + mcblasGemmEx
+//
+// fused:
+//     bias != nullptr
+//         -> require mcBLASLt fused bias
+//
+//     bias == nullptr
+//         -> portable mcblasGemmEx
+//
+// Production default:
+//     auto
+// ============================================================
+
+enum class MetaXLinearImpl {
+    AUTO,
+    PORTABLE,
+    FUSED,
+};
+
+MetaXLinearImpl get_metax_linear_impl() {
+    static const MetaXLinearImpl impl = []() {
+        const char *value = std::getenv("LLAISYS_METAX_LINEAR_IMPL");
+
+        if (value == nullptr || std::strcmp(value, "auto") == 0) { return MetaXLinearImpl::AUTO; }
+
+        if (std::strcmp(value, "portable") == 0) { return MetaXLinearImpl::PORTABLE; }
+
+        if (std::strcmp(value, "fused") == 0) { return MetaXLinearImpl::FUSED; }
+
+        throw std::invalid_argument(
+            "LLAISYS_METAX_LINEAR_IMPL "
+            "must be auto, portable, or fused.");
+    }();
+
+    return impl;
+}
+
+// ============================================================
+// mcBLAS / mcBLASLt error helpers
+// ============================================================
+
+bool mcblas_status_success(mcblasStatus_t status) { return status == MCBLAS_STATUS_SUCCESS; }
+
+bool mcblas_status_not_supported(mcblasStatus_t status) {
+    return status == MCBLAS_STATUS_NOT_SUPPORTED;
+}
+
+void check_mcblas(mcblasStatus_t status, const char *operation) {
+    if (mcblas_status_success(status)) { return; }
+
+    const char *status_name = mcblasGetStatusName(status);
+
+    const char *status_string = mcblasGetStatusString(status);
+
+    throw std::runtime_error(
+        std::string("Linear: mcBLAS failure in ") + operation + ": "
+        + (status_name != nullptr ? status_name : "unknown-status") + " ("
+        + (status_string != nullptr ? status_string : "no-status-description") + ")");
+}
+
+// ============================================================
+// mcBLAS handle resource
+// ============================================================
+
+class MetaXLinearBlasHandle {
+public:
+    MetaXLinearBlasHandle() = default;
+
+    MetaXLinearBlasHandle(const MetaXLinearBlasHandle &) = delete;
+
+    MetaXLinearBlasHandle &operator=(const MetaXLinearBlasHandle &) = delete;
+
+    ~MetaXLinearBlasHandle() { release(); }
+
+    mcblasHandle_t get(int device_id, mcStream_t stream) {
+        CHECK_ARGUMENT(device_id >= 0, "Linear: MetaX device id must be non-negative.");
+
+        if (_handle != nullptr && _device_id != device_id) { release(); }
+
+        if (_handle == nullptr) {
+            MC_CHECK(mcSetDevice(device_id));
+
+            check_mcblas(mcblasCreate(&_handle), "mcblasCreate");
+
+            _device_id = device_id;
+        }
+
+        check_mcblas(mcblasSetStream(_handle, stream), "mcblasSetStream");
+
+        return _handle;
+    }
+
+private:
+    void release() noexcept {
+        if (_handle == nullptr) {
+            _device_id = -1;
+
+            return;
+        }
+
+        if (_device_id >= 0) { (void)mcSetDevice(_device_id); }
+
+        (void)mcblasDestroy(_handle);
+
+        _handle = nullptr;
+
+        _device_id = -1;
+    }
+
+private:
+    int _device_id{-1};
+
+    mcblasHandle_t _handle{nullptr};
+};
+
+thread_local MetaXLinearBlasHandle METAX_LINEAR_BLAS_HANDLE;
+
+// ============================================================
+// mcBLASLt RAII descriptors
+// ============================================================
+
+class LtMatmulDesc {
+public:
+    LtMatmulDesc(mcblasComputeType_t compute_type, macaDataType scale_type) {
+        check_mcblas(
+            mcblasLtMatmulDescCreate(&_value, compute_type, scale_type),
+            "mcblasLtMatmulDescCreate");
+    }
+
+    LtMatmulDesc(const LtMatmulDesc &) = delete;
+
+    LtMatmulDesc &operator=(const LtMatmulDesc &) = delete;
+
+    ~LtMatmulDesc() {
+        if (_value != nullptr) { (void)mcblasLtMatmulDescDestroy(_value); }
+    }
+
+    mcblasLtMatmulDesc_t get() const { return _value; }
+
+private:
+    mcblasLtMatmulDesc_t _value{nullptr};
+};
+
+class LtMatrixLayout {
+public:
+    LtMatrixLayout(
+        macaDataType type, std::uint64_t rows, std::uint64_t cols, std::int64_t leading_dimension) {
+        check_mcblas(
+            mcblasLtMatrixLayoutCreate(&_value, type, rows, cols, leading_dimension),
+            "mcblasLtMatrixLayoutCreate");
+    }
+
+    LtMatrixLayout(const LtMatrixLayout &) = delete;
+
+    LtMatrixLayout &operator=(const LtMatrixLayout &) = delete;
+
+    ~LtMatrixLayout() {
+        if (_value != nullptr) { (void)mcblasLtMatrixLayoutDestroy(_value); }
+    }
+
+    mcblasLtMatrixLayout_t get() const { return _value; }
+
+private:
+    mcblasLtMatrixLayout_t _value{nullptr};
+};
+
+class LtPreference {
+public:
+    LtPreference() {
+        check_mcblas(mcblasLtMatmulPreferenceCreate(&_value), "mcblasLtMatmulPreferenceCreate");
+    }
+
+    LtPreference(const LtPreference &) = delete;
+
+    LtPreference &operator=(const LtPreference &) = delete;
+
+    ~LtPreference() {
+        if (_value != nullptr) { (void)mcblasLtMatmulPreferenceDestroy(_value); }
+    }
+
+    mcblasLtMatmulPreference_t get() const { return _value; }
+
+private:
+    mcblasLtMatmulPreference_t _value{nullptr};
+};
+
+// ============================================================
+// mcBLASLt cached plan
+//
+// No workspace is requested in this first fused-bias study.
+//
+// We ask the heuristic API for the best algorithm under the
+// default preference. If the returned algorithm requires any
+// workspace, this V1 fused plan is treated as unsupported and
+// AUTO falls back to the portable path.
+//
+// This isolates the effect of bias fusion without introducing
+// a separate workspace-management variable.
+// ============================================================
+
+struct LtPlanKey {
+    std::size_t row_count;
+    std::size_t output_features;
+    std::size_t input_features;
+    llaisysDataType_t type;
+
+    bool operator==(const LtPlanKey &other) const {
+        return row_count == other.row_count && output_features == other.output_features
+            && input_features == other.input_features && type == other.type;
+    }
+};
+
+struct LtPlanKeyHash {
+    std::size_t operator()(const LtPlanKey &key) const {
+        std::size_t value = std::hash<std::size_t>{}(key.row_count);
+
+        value ^= std::hash<std::size_t>{}(key.output_features) + 0x9e3779b97f4a7c15ULL
+               + (value << 6) + (value >> 2);
+
+        value ^= std::hash<std::size_t>{}(key.input_features) + 0x9e3779b97f4a7c15ULL + (value << 6)
+               + (value >> 2);
+
+        value ^= std::hash<int>{}(static_cast<int>(key.type)) + 0x9e3779b97f4a7c15ULL + (value << 6)
+               + (value >> 2);
+
+        return value;
+    }
+};
+
+struct LtPlan {
+    std::unique_ptr<LtMatmulDesc> operation;
+
+    std::unique_ptr<LtMatrixLayout> weight_layout;
+
+    std::unique_ptr<LtMatrixLayout> input_layout;
+
+    std::unique_ptr<LtMatrixLayout> output_layout;
+
+    std::unique_ptr<LtPreference> preference;
+
+    mcblasLtMatmulAlgo_t algo{};
+
+    bool supported{false};
+};
+
+// ============================================================
+// MetaX dtype -> mcBLAS dtype
+// ============================================================
+
+template <typename T> struct dependent_false : std::false_type {};
+
+template <typename T> constexpr macaDataType get_metax_linear_data_type() {
+    if constexpr (std::is_same_v<T, float>) {
+        return MACA_R_32F;
+    } else if constexpr (std::is_same_v<T, __half>) {
+        return MACA_R_16F;
+    } else if constexpr (std::is_same_v<T, __maca_bfloat16>) {
+        return MACA_R_16BF;
+    } else {
+        static_assert(dependent_false<T>::value, "Linear: unsupported MetaX scalar type.");
+    }
+}
+
+// ============================================================
+// mcBLASLt context + plan cache
+// ============================================================
+
+class MetaXLinearLtContext {
+public:
+    MetaXLinearLtContext() = default;
+
+    MetaXLinearLtContext(const MetaXLinearLtContext &) = delete;
+
+    MetaXLinearLtContext &operator=(const MetaXLinearLtContext &) = delete;
+
+    ~MetaXLinearLtContext() { release(); }
+
+    mcblasLtHandle_t get_handle(int device_id) {
+        CHECK_ARGUMENT(device_id >= 0, "Linear: MetaX device id must be non-negative.");
+
+        if (_handle != nullptr && _device_id != device_id) { release(); }
+
+        if (_handle == nullptr) {
+            MC_CHECK(mcSetDevice(device_id));
+
+            check_mcblas(mcblasLtCreate(&_handle), "mcblasLtCreate");
+
+            _device_id = device_id;
+        }
+
+        return _handle;
+    }
+
+    template <typename T>
+    LtPlan &get_plan(
+        llaisysDataType_t type,
+        std::size_t row_count,
+        std::size_t output_features,
+        std::size_t input_features,
+        const T *bias,
+        int device_id) {
+        (void)get_handle(device_id);
+
+        const LtPlanKey key{
+            row_count,
+            output_features,
+            input_features,
+            type,
+        };
+
+        auto found = _plans.find(key);
+
+        if (found != _plans.end()) { return found->second; }
+
+        LtPlan plan = create_plan<T>(type, row_count, output_features, input_features, bias);
+
+        auto inserted = _plans.emplace(key, std::move(plan));
+
+        return inserted.first->second;
+    }
+
+private:
+    template <typename T>
+    LtPlan create_plan(
+        llaisysDataType_t,
+        std::size_t row_count,
+        std::size_t output_features,
+        std::size_t input_features,
+        const T *bias) {
+        LtPlan plan;
+
+        constexpr macaDataType data_type = get_metax_linear_data_type<T>();
+
+        plan.operation = std::make_unique<LtMatmulDesc>(MCBLAS_COMPUTE_32F, MACA_R_32F);
+
+        // ----------------------------------------------------
+        // Same column-major reinterpretation as mcblasGemmEx:
+        //
+        //     output^T [N,M]
+        //       =
+        //     weight [N,K]
+        //       x
+        //     input^T [K,M]
+        //
+        // Raw weight memory is interpreted as [K,N] and
+        // transposed by the operation descriptor.
+        // ----------------------------------------------------
+
+        const mcblasOperation_t trans_a = MCBLAS_OP_T;
+
+        const mcblasOperation_t trans_b = MCBLAS_OP_N;
+
+        check_mcblas(
+            mcblasLtMatmulDescSetAttribute(
+                plan.operation->get(), MCBLASLT_MATMUL_DESC_TRANSA, &trans_a, sizeof(trans_a)),
+            "mcblasLtMatmulDescSetAttribute(TRANSA)");
+
+        check_mcblas(
+            mcblasLtMatmulDescSetAttribute(
+                plan.operation->get(), MCBLASLT_MATMUL_DESC_TRANSB, &trans_b, sizeof(trans_b)),
+            "mcblasLtMatmulDescSetAttribute(TRANSB)");
+
+        const mcblasLtEpilogue_t epilogue = MCBLASLT_EPILOGUE_BIAS;
+
+        check_mcblas(
+            mcblasLtMatmulDescSetAttribute(
+                plan.operation->get(), MCBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)),
+            "mcblasLtMatmulDescSetAttribute(EPILOGUE)");
+
+        const void *bias_pointer = bias;
+
+        check_mcblas(
+            mcblasLtMatmulDescSetAttribute(
+                plan.operation->get(),
+                MCBLASLT_MATMUL_DESC_BIAS_POINTER,
+                &bias_pointer,
+                sizeof(bias_pointer)),
+            "mcblasLtMatmulDescSetAttribute(BIAS_POINTER)");
+
+        const macaDataType bias_type = data_type;
+
+        check_mcblas(
+            mcblasLtMatmulDescSetAttribute(
+                plan.operation->get(),
+                MCBLASLT_MATMUL_DESC_BIAS_DATA_TYPE,
+                &bias_type,
+                sizeof(bias_type)),
+            "mcblasLtMatmulDescSetAttribute(BIAS_DATA_TYPE)");
+
+        const std::uint64_t m = static_cast<std::uint64_t>(output_features);
+
+        const std::uint64_t n = static_cast<std::uint64_t>(row_count);
+
+        const std::uint64_t k = static_cast<std::uint64_t>(input_features);
+
+        plan.weight_layout
+            = std::make_unique<LtMatrixLayout>(data_type, k, m, static_cast<std::int64_t>(k));
+
+        plan.input_layout
+            = std::make_unique<LtMatrixLayout>(data_type, k, n, static_cast<std::int64_t>(k));
+
+        plan.output_layout
+            = std::make_unique<LtMatrixLayout>(data_type, m, n, static_cast<std::int64_t>(m));
+
+        plan.preference = std::make_unique<LtPreference>();
+
+        mcblasLtMatmulHeuristicResult_t heuristic{};
+
+        int returned_results = 0;
+
+        const mcblasStatus_t heuristic_status = mcblasLtMatmulAlgoGetHeuristic(
+            _handle,
+            plan.operation->get(),
+            plan.weight_layout->get(),
+            plan.input_layout->get(),
+            plan.output_layout->get(),
+            plan.output_layout->get(),
+            plan.preference->get(),
+            1,
+            &heuristic,
+            &returned_results);
+
+        if (mcblas_status_not_supported(heuristic_status) || returned_results == 0
+            || !mcblas_status_success(heuristic.state)) {
+            plan.supported = false;
+
+            return plan;
+        }
+
+        check_mcblas(heuristic_status, "mcblasLtMatmulAlgoGetHeuristic");
+
+        // ----------------------------------------------------
+        // V1 fused study uses zero workspace.
+        //
+        // If the best default heuristic requires workspace,
+        // AUTO falls back to portable. A later experiment can
+        // add workspace as an independent variable.
+        // ----------------------------------------------------
+
+        if (heuristic.workspaceSize != 0) {
+            plan.supported = false;
+
+            return plan;
+        }
+
+        plan.algo = heuristic.algo;
+
+        plan.supported = true;
+
+        return plan;
+    }
+
+    void release() noexcept {
+        _plans.clear();
+
+        if (_handle != nullptr) {
+            if (_device_id >= 0) { (void)mcSetDevice(_device_id); }
+
+            (void)mcblasLtDestroy(_handle);
+
+            _handle = nullptr;
+        }
+
+        _device_id = -1;
+    }
+
+private:
+    int _device_id{-1};
+
+    mcblasLtHandle_t _handle{nullptr};
+
+    std::unordered_map<LtPlanKey, LtPlan, LtPlanKeyHash> _plans;
+};
+
+thread_local MetaXLinearLtContext METAX_LINEAR_LT_CONTEXT;
+
+// ============================================================
+// Portable output initialization
+// ============================================================
+
+template <typename T>
+void initialize_linear_output(
+    T *out,
+    const T *bias,
+    std::size_t output_elements,
+    std::size_t output_features,
+    mcStream_t stream) {
+    if (output_elements == 0) { return; }
+
+    if (bias == nullptr) {
+        CHECK_ARGUMENT(
+            output_elements <= std::numeric_limits<std::size_t>::max() / sizeof(T),
+            "Linear: output byte size overflows size_t.");
+
+        MC_CHECK(mcMemsetAsync(out, 0, output_elements * sizeof(T), stream));
+
+        return;
+    }
+
+    const std::size_t grid_size = get_metax_linear_grid_size(output_elements);
+
+    cuda_compat::launch_linear_bias_broadcast<T>(
+        out, bias, output_elements, output_features, METAX_LINEAR_BLOCK_SIZE, grid_size, stream);
+
+    MC_CHECK(mcGetLastError());
+}
+
+// ============================================================
+// Portable mcblasGemmEx path
+// ============================================================
+
+template <typename T>
+void launch_portable_linear(
+    T *out,
+    const T *in,
+    const T *weight,
+    const T *bias,
+    std::size_t row_count,
+    std::size_t output_features,
+    std::size_t input_features,
+    int device_id,
+    mcStream_t stream) {
+    const std::size_t output_elements = checked_product(
+        row_count, output_features, "Linear: output element count overflows size_t.");
+
+    if (output_elements == 0) { return; }
+
+    if (input_features == 0) {
+        initialize_linear_output(out, bias, output_elements, output_features, stream);
+
+        return;
+    }
+
+    float beta = 0.0F;
+
+    if (bias != nullptr) {
+        initialize_linear_output(out, bias, output_elements, output_features, stream);
+
+        beta = 1.0F;
+    }
+
+    const float alpha = 1.0F;
+
+    constexpr macaDataType data_type = get_metax_linear_data_type<T>();
+
+    mcblasHandle_t handle = METAX_LINEAR_BLAS_HANDLE.get(device_id, stream);
+
+    check_mcblas(
+        mcblasGemmEx(
+            handle,
+
+            MCBLAS_OP_T,
+            MCBLAS_OP_N,
+
+            static_cast<int>(output_features),
+
+            static_cast<int>(row_count),
+
+            static_cast<int>(input_features),
+
+            &alpha,
+
+            weight,
+            data_type,
+            static_cast<int>(input_features),
+
+            in,
+            data_type,
+            static_cast<int>(input_features),
+
+            &beta,
+
+            out,
+            data_type,
+            static_cast<int>(output_features),
+
+            MCBLAS_COMPUTE_32F,
+            MCBLAS_GEMM_DEFAULT),
+        "mcblasGemmEx");
+}
+
+// ============================================================
+// mcBLASLt fused-bias path
+//
+// Returns:
+//     true  -> fused operation submitted
+//     false -> unsupported by V1 fused plan
+//
+// Important:
+//     No separate bias-broadcast kernel is launched.
+// ============================================================
+
+template <typename T>
+bool try_launch_fused_linear(
+    T *out,
+    const T *in,
+    const T *weight,
+    const T *bias,
+    llaisysDataType_t type,
+    std::size_t row_count,
+    std::size_t output_features,
+    std::size_t input_features,
+    int device_id,
+    mcStream_t stream) {
+    if (bias == nullptr || row_count == 0 || output_features == 0 || input_features == 0) {
+        return false;
+    }
+
+    LtPlan &plan = METAX_LINEAR_LT_CONTEXT.get_plan<T>(
+        type, row_count, output_features, input_features, bias, device_id);
+
+    if (!plan.supported) { return false; }
+
+    // --------------------------------------------------------
+    // Bias tensor may change between calls.
+    // Refresh the pointer on every invocation.
+    // --------------------------------------------------------
+
+    const void *bias_pointer = bias;
+
+    check_mcblas(
+        mcblasLtMatmulDescSetAttribute(
+            plan.operation->get(),
+            MCBLASLT_MATMUL_DESC_BIAS_POINTER,
+            &bias_pointer,
+            sizeof(bias_pointer)),
+        "mcblasLtMatmulDescSetAttribute(BIAS_POINTER)");
+
+    const float alpha = 1.0F;
+
+    // Bias is fused by the epilogue, therefore no pre-existing
+    // output value participates in the GEMM result.
+    const float beta = 0.0F;
+
+    const mcblasStatus_t status = mcblasLtMatmul(
+        METAX_LINEAR_LT_CONTEXT.get_handle(device_id),
+
+        plan.operation->get(),
+
+        &alpha,
+
+        weight,
+        plan.weight_layout->get(),
+
+        in,
+        plan.input_layout->get(),
+
+        &beta,
+
+        out,
+        plan.output_layout->get(),
+
+        out,
+        plan.output_layout->get(),
+
+        &plan.algo,
+
+        nullptr,
+        0,
+
+        stream);
+
+    if (mcblas_status_not_supported(status)) { return false; }
+
+    check_mcblas(status, "mcblasLtMatmul");
+
+    return true;
+}
+
+// ============================================================
+// MetaX Linear dispatcher
+// ============================================================
+
+template <typename T>
+void launch_metax_linear(
+    T *out,
+    const T *in,
+    const T *weight,
+    const T *bias,
+    llaisysDataType_t type,
+    std::size_t row_count,
+    std::size_t output_features,
+    std::size_t input_features,
+    int device_id,
+    mcStream_t stream) {
+    const std::size_t output_elements = checked_product(
+        row_count, output_features, "Linear: output element count overflows size_t.");
+
+    const std::size_t input_elements = checked_product(
+        row_count, input_features, "Linear: input element count overflows size_t.");
+
+    const std::size_t weight_elements = checked_product(
+        output_features, input_features, "Linear: weight element count overflows size_t.");
+
+    CHECK_ARGUMENT(
+        output_elements == 0 || out != nullptr, "Linear: output pointer must not be null.");
+
+    CHECK_ARGUMENT(input_elements == 0 || in != nullptr, "Linear: input pointer must not be null.");
+
+    CHECK_ARGUMENT(
+        weight_elements == 0 || weight != nullptr, "Linear: weight pointer must not be null.");
+
+    if (output_elements == 0) { return; }
+
+    constexpr std::size_t max_mcblas_dimension
+        = static_cast<std::size_t>(std::numeric_limits<int>::max());
+
+    CHECK_ARGUMENT(
+        row_count <= max_mcblas_dimension, "Linear: row count exceeds the mcBLAS int limit.");
+
+    CHECK_ARGUMENT(
+        output_features <= max_mcblas_dimension,
+        "Linear: output feature count exceeds the mcBLAS int limit.");
+
+    CHECK_ARGUMENT(
+        input_features <= max_mcblas_dimension,
+        "Linear: input feature count exceeds the mcBLAS int limit.");
+
+    const MetaXLinearImpl impl = get_metax_linear_impl();
+
+    // --------------------------------------------------------
+    // Fused bias is meaningful only when bias is present and
+    // K > 0. Degenerate/no-bias cases retain the tested
+    // mcblasGemmEx path.
+    // --------------------------------------------------------
+
+    const bool should_try_fused = bias != nullptr && input_features != 0
+                               && (impl == MetaXLinearImpl::FUSED
+                                   || (impl == MetaXLinearImpl::AUTO
+                                       && should_auto_use_fused_linear(type, row_count, bias)));
+
+    if (should_try_fused) {
+        const bool fused = try_launch_fused_linear(
+            out,
+            in,
+            weight,
+            bias,
+            type,
+            row_count,
+            output_features,
+            input_features,
+            device_id,
+            stream);
+
+        if (fused) { return; }
+
+        if (impl == MetaXLinearImpl::FUSED) {
+            throw std::runtime_error(
+                "Linear: mcBLASLt fused-bias path "
+                "is not supported for this configuration.");
+        }
+    }
+
+    // --------------------------------------------------------
+    // Portable baseline and AUTO fallback.
+    // --------------------------------------------------------
+
+    launch_portable_linear(
+        out, in, weight, bias, row_count, output_features, input_features, device_id, stream);
+}
+
+} // namespace
+
+// ============================================================
+// Public MetaX backend
+// ============================================================
+
+namespace llaisys::ops::metax {
+
+void linear(
+    std::byte *out,
+    const std::byte *in,
+    const std::byte *weight,
+    const std::byte *bias,
+    llaisysDataType_t type,
+    std::size_t nrow,
+    std::size_t ncol_out,
+    std::size_t ncol_in,
+    int device_id,
+    llaisysStream_t stream) {
+    const mcStream_t mc_stream = reinterpret_cast<mcStream_t>(stream);
+
+    return dispatch_metax_dtype(type, [&](auto tag) {
+        using T = typename decltype(tag)::type;
+
+        return launch_metax_linear<T>(
+            reinterpret_cast<T *>(out),
+            reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight),
+            reinterpret_cast<const T *>(bias),
+            type,
+            nrow,
+            ncol_out,
+            ncol_in,
+            device_id,
+            mc_stream);
+    });
+}
+
+} // namespace llaisys::ops::metax

@@ -7,69 +7,69 @@
 #include "../allocator/allocator.hpp"
 #include "../core.hpp"
 
+#include <cstddef>
 #include <memory>
 
 namespace llaisys::core {
 
 class Runtime {
 private:
-	llaisysDeviceType_t _device_type;
-	int _device_id;
+    llaisysDeviceType_t _device_type;
+    int _device_id;
 
-	const LlaisysRuntimeAPI *_api;
-	MemoryAllocator *_allocator;
+    const LlaisysRuntimeAPI *_api;
 
-	bool _is_active;
+    std::unique_ptr<MemoryAllocator> _allocator;
 
-	llaisysStream_t _stream;
+    bool _is_active;
 
-	// Store backend-specific reusable resources.
-	//
-	// CPU:
-	//     nullptr
-	//
-	// NVIDIA:
-	//     llaisys::device::nvidia::Resource
-	std::unique_ptr<llaisys::device::DeviceResource> _resource;
+    llaisysStream_t _stream;
 
-	void _activate();
-	void _deactivate();
+    // Opaque backend-specific reusable resources.
+    //
+    // A backend may return nullptr when it has no extra
+    // Runtime-owned resources.
+    std::unique_ptr<llaisys::device::DeviceResource> _resource;
 
-	Runtime(
-		llaisysDeviceType_t device_type,
-		int device_id
-	);
+    void _activate();
+    void _deactivate();
+
+    Runtime(llaisysDeviceType_t device_type, int device_id);
 
 public:
-	friend class Context;
+    friend class Context;
 
-	~Runtime();
+    ~Runtime() noexcept;
 
-	// Prevent copying.
-	Runtime(const Runtime &) = delete;
-	Runtime &operator=(const Runtime &) = delete;
+    Runtime(const Runtime &) = delete;
 
-	// Prevent moving.
-	Runtime(Runtime &&) = delete;
-	Runtime &operator=(Runtime &&) = delete;
+    Runtime &operator=(const Runtime &) = delete;
 
-	llaisysDeviceType_t deviceType() const;
-	int deviceId() const;
-	bool isActive() const;
+    Runtime(Runtime &&) = delete;
 
-	const LlaisysRuntimeAPI *api() const;
+    Runtime &operator=(Runtime &&) = delete;
 
-	storage_t allocateDeviceStorage(std::size_t size);
-	storage_t allocateHostStorage(std::size_t size);
+    llaisysDeviceType_t deviceType() const;
 
-	void freeStorage(Storage *storage);
+    int deviceId() const;
 
-	llaisysStream_t stream() const;
+    bool isActive() const;
 
-	llaisys::device::DeviceResource *resource();
-	const llaisys::device::DeviceResource *resource() const;
+    const LlaisysRuntimeAPI *api() const;
 
-	void synchronize() const;
+    storage_t allocateDeviceStorage(std::size_t size);
+
+    storage_t allocateHostStorage(std::size_t size);
+
+    void freeStorage(Storage *storage);
+
+    llaisysStream_t stream() const;
+
+    llaisys::device::DeviceResource *resource();
+
+    const llaisys::device::DeviceResource *resource() const;
+
+    void synchronize() const;
 };
 
 } // namespace llaisys::core
