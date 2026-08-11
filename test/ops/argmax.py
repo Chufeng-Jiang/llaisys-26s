@@ -111,6 +111,7 @@ if __name__ == "__main__":
         choices=[
             "cpu",
             "nvidia",
+            "metax",
         ],
         type=str,
     )
