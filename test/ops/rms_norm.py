@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(
     os.path.join(
@@ -13,14 +13,14 @@ sys.path.insert(
     parent_dir,
 )
 
-import llaisys
 import torch
-
 from test_utils import (
-    random_tensor,
-    check_equal,
     benchmark_llaisys,
+    check_equal,
+    random_tensor,
 )
+
+import llaisys
 
 
 def torch_rms_norm(
@@ -65,7 +65,7 @@ def test_op_rms_norm(
     device_name="cpu",
     profile=False,
 ):
-    print(f"   shape {shape} " f"dtype <{dtype_name}>")
+    print(f"   shape {shape} dtype <{dtype_name}>")
 
     x, x_ = random_tensor(
         shape,
@@ -119,7 +119,7 @@ def test_op_rms_norm(
                 eps,
             ),
             device_name,
-            label=(f"RMSNorm " f"shape={shape} " f"dtype={dtype_name}"),
+            label=(f"RMSNorm shape={shape} dtype={dtype_name}"),
         )
 
 
@@ -176,7 +176,7 @@ if __name__ == "__main__":
         ),
     ]
 
-    print(f"Testing Ops.rms_norm " f"on {args.device}")
+    print(f"Testing Ops.rms_norm on {args.device}")
 
     for shape in test_shapes:
         for (
@@ -193,4 +193,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print("\033[92m" "Test passed!" "\033[0m\n")
+    print("\033[92mTest passed!\033[0m\n")

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from ctypes import (
     byref,
     c_int,
@@ -7,23 +8,17 @@ from ctypes import (
     c_void_p,
 )
 
-from typing import (
-    Sequence,
-    Tuple,
-)
-
 from .libllaisys import (
     LIB_LLAISYS,
-    llaisysTensor_t,
-    llaisysDeviceType_t,
+    DataType,
     DeviceType,
     llaisysDataType_t,
-    DataType,
+    llaisysDeviceType_t,
+    llaisysTensor_t,
 )
 
 
 class Tensor:
-
     def __init__(
         self,
         shape: Sequence[int] = None,
@@ -40,26 +35,16 @@ class Tensor:
             self._tensor = tensor
 
         else:
-            _ndim = (
-                0
-                if shape is None
-                else len(shape)
-            )
+            _ndim = 0 if shape is None else len(shape)
 
-            _shape = (
-                None
-                if shape is None
-                else (c_size_t * len(shape))(*shape)
-            )
+            _shape = None if shape is None else (c_size_t * len(shape))(*shape)
 
-            self._tensor: llaisysTensor_t = (
-                LIB_LLAISYS.tensorCreate(
-                    _shape,
-                    c_size_t(_ndim),
-                    llaisysDataType_t(dtype),
-                    llaisysDeviceType_t(device),
-                    c_int(device_id),
-                )
+            self._tensor: llaisysTensor_t = LIB_LLAISYS.tensorCreate(
+                _shape,
+                c_size_t(_ndim),
+                llaisysDataType_t(dtype),
+                llaisysDeviceType_t(device),
+                c_int(device_id),
             )
 
         # ========================================================
@@ -101,9 +86,7 @@ class Tensor:
             byref(ndim_value),
         )
 
-        self._cached_ndim = int(
-            ndim_value.value
-        )
+        self._cached_ndim = int(ndim_value.value)
 
         # --------------------------------------------------------
         # shape
@@ -112,22 +95,14 @@ class Tensor:
         if self._cached_ndim == 0:
             self._cached_shape = ()
         else:
-            shape_buf = (
-                c_size_t
-                * self._cached_ndim
-            )()
+            shape_buf = (c_size_t * self._cached_ndim)()
 
             LIB_LLAISYS.tensorGetShape(
                 self._tensor,
                 shape_buf,
             )
 
-            self._cached_shape = tuple(
-                int(shape_buf[i])
-                for i in range(
-                    self._cached_ndim
-                )
-            )
+            self._cached_shape = tuple(int(shape_buf[i]) for i in range(self._cached_ndim))
 
         # --------------------------------------------------------
         # strides
@@ -136,22 +111,14 @@ class Tensor:
         if self._cached_ndim == 0:
             self._cached_strides = ()
         else:
-            strides_buf = (
-                c_ssize_t
-                * self._cached_ndim
-            )()
+            strides_buf = (c_ssize_t * self._cached_ndim)()
 
             LIB_LLAISYS.tensorGetStrides(
                 self._tensor,
                 strides_buf,
             )
 
-            self._cached_strides = tuple(
-                int(strides_buf[i])
-                for i in range(
-                    self._cached_ndim
-                )
-            )
+            self._cached_strides = tuple(int(strides_buf[i]) for i in range(self._cached_ndim))
 
         # --------------------------------------------------------
         # dtype
@@ -164,28 +131,20 @@ class Tensor:
             byref(dtype_value),
         )
 
-        self._cached_dtype = DataType(
-            dtype_value.value
-        )
+        self._cached_dtype = DataType(dtype_value.value)
 
         # --------------------------------------------------------
         # device type
         # --------------------------------------------------------
 
-        device_type_value = (
-            llaisysDeviceType_t()
-        )
+        device_type_value = llaisysDeviceType_t()
 
         LIB_LLAISYS.tensorGetDeviceType(
             self._tensor,
             byref(device_type_value),
         )
 
-        self._cached_device_type = (
-            DeviceType(
-                device_type_value.value
-            )
-        )
+        self._cached_device_type = DeviceType(device_type_value.value)
 
         # --------------------------------------------------------
         # device id
@@ -198,23 +157,16 @@ class Tensor:
             byref(device_id_value),
         )
 
-        self._cached_device_id = int(
-            device_id_value.value
-        )
+        self._cached_device_id = int(device_id_value.value)
 
     # ============================================================
     # Lifetime
     # ============================================================
 
     def __del__(self):
-        if (
-            hasattr(self, "_tensor")
-            and self._tensor is not None
-        ):
+        if hasattr(self, "_tensor") and self._tensor is not None:
             try:
-                LIB_LLAISYS.tensorDestroy(
-                    self._tensor
-                )
+                LIB_LLAISYS.tensorDestroy(self._tensor)
 
             except Exception:
                 # Never propagate exceptions from __del__.
@@ -226,10 +178,10 @@ class Tensor:
     # Cached metadata access
     # ============================================================
 
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         return self._cached_shape
 
-    def strides(self) -> Tuple[int, ...]:
+    def strides(self) -> tuple[int, ...]:
         return self._cached_strides
 
     def ndim(self) -> int:
@@ -263,11 +215,7 @@ class Tensor:
             byref(value),
         )
 
-        return (
-            0
-            if value.value is None
-            else int(value.value)
-        )
+        return 0 if value.value is None else int(value.value)
 
     # ============================================================
     # Native tensor handle
@@ -281,19 +229,10 @@ class Tensor:
     # ============================================================
 
     def debug(self):
-        LIB_LLAISYS.tensorDebug(
-            self._tensor
-        )
+        LIB_LLAISYS.tensorDebug(self._tensor)
 
     def __repr__(self):
-        return (
-            f"<Tensor "
-            f"shape={self.shape()} "
-            f"dtype={self.dtype()} "
-            f"device="
-            f"{self.device_type()}:"
-            f"{self.device_id()}>"
-        )
+        return f"<Tensor shape={self.shape()} dtype={self.dtype()} device={self.device_type()}:{self.device_id()}>"
 
     # ============================================================
     # Data loading
@@ -320,9 +259,7 @@ class Tensor:
             byref(value),
         )
 
-        return bool(
-            value.value
-        )
+        return bool(value.value)
 
     # ============================================================
     # View
@@ -338,18 +275,13 @@ class Tensor:
         self,
         *shape: int,
     ):
-        _shape = (
-            c_size_t
-            * len(shape)
-        )(*shape)
+        _shape = (c_size_t * len(shape))(*shape)
 
         return Tensor(
             tensor=LIB_LLAISYS.tensorView(
                 self._tensor,
                 _shape,
-                c_size_t(
-                    len(shape)
-                ),
+                c_size_t(len(shape)),
             )
         )
 
@@ -365,15 +297,9 @@ class Tensor:
         self,
         *perm: int,
     ):
-        assert (
-            len(perm)
-            == self.ndim()
-        )
+        assert len(perm) == self.ndim()
 
-        _perm = (
-            c_size_t
-            * len(perm)
-        )(*perm)
+        _perm = (c_size_t * len(perm))(*perm)
 
         return Tensor(
             tensor=LIB_LLAISYS.tensorPermute(

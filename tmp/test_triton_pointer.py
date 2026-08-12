@@ -1,5 +1,5 @@
+from llaisys.libllaisys import DataType, DeviceType
 from llaisys.tensor import Tensor
-from llaisys.libllaisys import DeviceType, DataType
 from llaisys.triton.tensor import as_nvidia_triton_tensor
 
 x = Tensor(

@@ -1,11 +1,12 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
-import llaisys
 import torch
-from test_utils import random_tensor, check_equal, benchmark
+from test_utils import benchmark, check_equal, random_tensor
+
+import llaisys
 
 
 def torch_self_attention(attn_val, query, key, value, scale):
@@ -15,9 +16,7 @@ def torch_self_attention(attn_val, query, key, value, scale):
     L, S = query.size(-2), key.size(-2)
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
 
-    temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(
-        diagonal=S - L
-    )
+    temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(diagonal=S - L)
     attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
     attn_bias.to(query.dtype)
 
@@ -42,9 +41,7 @@ def test_op_self_attention(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   qlen={qlen} kvlen={kvlen} nh={nh} nkvh={nkvh} hd={hd} dtype <{dtype_name}>"
-    )
+    print(f"   qlen={qlen} kvlen={kvlen} nh={nh} nkvh={nkvh} hd={hd} dtype <{dtype_name}>")
     q, q_ = random_tensor((qlen, nh, hd), dtype_name, device_name)
     k, k_ = random_tensor((kvlen, nkvh, hd), dtype_name, device_name)
     v, v_ = random_tensor((kvlen, nkvh, hd), dtype_name, device_name)
@@ -67,9 +64,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str
-    )
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     testShapes = [
@@ -91,8 +86,6 @@ if __name__ == "__main__":
     print(f"Testing Ops.self_attention on {args.device}")
     for shape in testShapes:
         for dtype_name, atol, rtol in testDtypePrec:
-            test_op_self_attention(
-                *shape, dtype_name, atol, rtol, args.device, args.profile
-            )
+            test_op_self_attention(*shape, dtype_name, atol, rtol, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

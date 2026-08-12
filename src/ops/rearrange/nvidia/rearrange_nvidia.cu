@@ -2,8 +2,8 @@
 
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../utils.hpp"
-#include "../layout_utils.hpp"
 #include "../../cuda_compat/common.cuh"
+#include "../layout_utils.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -16,12 +16,12 @@ namespace {
 
 using llaisys::device::nvidia::are_aligned;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
-using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::Packed128;
 using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
 using llaisys::device::nvidia::PACKED_128_ELEMENTS;
 using llaisys::device::nvidia::to_cuda_stream;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 
 using llaisys::ops::rearrange_utils::absolute_stride;
 using llaisys::ops::rearrange_utils::ContiguousTail;

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import triton
 
-
 # ============================================================
 # Project paths
 # ============================================================
@@ -27,18 +26,15 @@ sys.path.insert(
 # LLAISYS imports
 # ============================================================
 
-import llaisys
-
 from llaisys.libllaisys import DeviceType
 from llaisys.runtime import RuntimeAPI
-
 from llaisys.triton.backends.nvidia import NvidiaTritonBackend
 from llaisys.triton.kernels.add import add_kernel
 from llaisys.triton.ops import add as triton_add
 from llaisys.triton.tensor import as_nvidia_triton_tensor
-
 from test_utils import random_tensor
 
+import llaisys
 
 # ============================================================
 # Host-visible operator benchmark
@@ -85,9 +81,7 @@ def benchmark_host_latency(
 
         elapsed_ms = (end - start) / 1e6
 
-        samples_ms.append(
-            elapsed_ms / repeat
-        )
+        samples_ms.append(elapsed_ms / repeat)
 
     return {
         "median_ms": statistics.median(samples_ms),
@@ -130,9 +124,7 @@ def benchmark_cpu_component(
 
         elapsed_us = (end - start) / 1e3
 
-        samples_us.append(
-            elapsed_us / repeat
-        )
+        samples_us.append(elapsed_us / repeat)
 
     return {
         "median_us": statistics.median(samples_us),
@@ -164,9 +156,7 @@ def benchmark_stream_bridge(
     device_id,
 ):
     def bridge_once():
-        stream_ptr = runtime.get_context_stream(
-            device_id
-        )
+        stream_ptr = runtime.get_context_stream(device_id)
 
         with backend.stream_context(
             stream_ptr,
@@ -189,18 +179,11 @@ def benchmark_add(
     dtype_name,
 ):
     print()
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        f"shape={shape} "
-        f"dtype={dtype_name}"
-    )
+    print(f"shape={shape} dtype={dtype_name}")
 
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
     # ========================================================
     # Create tensors
@@ -242,19 +225,13 @@ def benchmark_add(
     # Runtime / backend
     # ========================================================
 
-    runtime = RuntimeAPI(
-        DeviceType.NVIDIA
-    )
+    runtime = RuntimeAPI(DeviceType.NVIDIA)
 
-    runtime.set_device(
-        device_id
-    )
+    runtime.set_device(device_id)
 
     backend = NvidiaTritonBackend()
 
-    stream_ptr = runtime.get_context_stream(
-        device_id
-    )
+    stream_ptr = runtime.get_context_stream(device_id)
 
     # ========================================================
     # A. Native integrated Add
@@ -310,9 +287,7 @@ def benchmark_add(
     for dim in c_prebound.shape():
         numel *= dim
 
-    config = backend.add_config(
-        numel
-    )
+    config = backend.add_config(numel)
 
     block_size = config["BLOCK_SIZE"]
 
@@ -323,17 +298,11 @@ def benchmark_add(
         ),
     )
 
-    c_prebound_triton = as_nvidia_triton_tensor(
-        c_prebound
-    )
+    c_prebound_triton = as_nvidia_triton_tensor(c_prebound)
 
-    a_triton = as_nvidia_triton_tensor(
-        a
-    )
+    a_triton = as_nvidia_triton_tensor(a)
 
-    b_triton = as_nvidia_triton_tensor(
-        b
-    )
+    b_triton = as_nvidia_triton_tensor(b)
 
     # ========================================================
     # D. Triton pre-bound stream
@@ -399,38 +368,21 @@ def benchmark_add(
         a_device_id = a.device_id()
         b_device_id = b.device_id()
 
-        if (
-            c_shape != a_shape
-            or c_shape != b_shape
-        ):
-            raise ValueError(
-                "shape mismatch"
-            )
+        if c_shape != a_shape or c_shape != b_shape:
+            raise ValueError("shape mismatch")
 
-        if (
-            c_dtype != a_dtype
-            or c_dtype != b_dtype
-        ):
-            raise ValueError(
-                "dtype mismatch"
-            )
+        if c_dtype != a_dtype or c_dtype != b_dtype:
+            raise ValueError("dtype mismatch")
 
         if (
             c_device_type != DeviceType.NVIDIA
             or a_device_type != DeviceType.NVIDIA
             or b_device_type != DeviceType.NVIDIA
         ):
-            raise ValueError(
-                "device type mismatch"
-            )
+            raise ValueError("device type mismatch")
 
-        if (
-            c_device_id != a_device_id
-            or c_device_id != b_device_id
-        ):
-            raise ValueError(
-                "device id mismatch"
-            )
+        if c_device_id != a_device_id or c_device_id != b_device_id:
+            raise ValueError("device id mismatch")
 
         local_numel = 1
 
@@ -457,17 +409,11 @@ def benchmark_add(
     # ========================================================
 
     def wrapper_only():
-        as_nvidia_triton_tensor(
-            c_integrated
-        )
+        as_nvidia_triton_tensor(c_integrated)
 
-        as_nvidia_triton_tensor(
-            a
-        )
+        as_nvidia_triton_tensor(a)
 
-        as_nvidia_triton_tensor(
-            b
-        )
+        as_nvidia_triton_tensor(b)
 
     wrapper_result = benchmark_cpu_component(
         wrapper_only,
@@ -478,9 +424,7 @@ def benchmark_add(
     # ========================================================
 
     def get_stream_only():
-        runtime.get_context_stream(
-            device_id
-        )
+        runtime.get_context_stream(device_id)
 
     get_stream_result = benchmark_cpu_component(
         get_stream_only,
@@ -490,9 +434,7 @@ def benchmark_add(
     # H. Cached stream context enter / exit
     # ========================================================
 
-    cached_stream_ptr = runtime.get_context_stream(
-        device_id
-    )
+    cached_stream_ptr = runtime.get_context_stream(device_id)
 
     # Warm ExternalStream cache.
     with backend.stream_context(
@@ -581,87 +523,47 @@ def benchmark_add(
     # Convert operator results to microseconds
     # ========================================================
 
-    native_us = (
-        native_result["median_ms"]
-        * 1000.0
-    )
+    native_us = native_result["median_ms"] * 1000.0
 
-    integrated_us = (
-        integrated_result["median_ms"]
-        * 1000.0
-    )
+    integrated_us = integrated_result["median_ms"] * 1000.0
 
-    prebound_us = (
-        prebound_result["median_ms"]
-        * 1000.0
-    )
+    prebound_us = prebound_result["median_ms"] * 1000.0
 
-    extra_us = (
-        integrated_us
-        - prebound_us
-    )
+    extra_us = integrated_us - prebound_us
 
     # ========================================================
     # Host integration component values
     # ========================================================
 
-    metadata_us = metadata_result[
-        "median_us"
-    ]
+    metadata_us = metadata_result["median_us"]
 
-    wrapper_us = wrapper_result[
-        "median_us"
-    ]
+    wrapper_us = wrapper_result["median_us"]
 
-    get_stream_us = get_stream_result[
-        "median_us"
-    ]
+    get_stream_us = get_stream_result["median_us"]
 
-    context_us = context_result[
-        "median_us"
-    ]
+    context_us = context_result["median_us"]
 
-    bridge_us = bridge_result[
-        "median_us"
-    ]
+    bridge_us = bridge_result["median_us"]
 
     # ========================================================
     # Individual Tensor accessor values
     # ========================================================
 
-    shape_us = shape_result[
-        "median_us"
-    ]
+    shape_us = shape_result["median_us"]
 
-    dtype_us = dtype_result[
-        "median_us"
-    ]
+    dtype_us = dtype_result["median_us"]
 
-    device_type_us = device_type_result[
-        "median_us"
-    ]
+    device_type_us = device_type_result["median_us"]
 
-    device_id_us = device_id_result[
-        "median_us"
-    ]
+    device_id_us = device_id_result["median_us"]
 
-    data_ptr_us = data_ptr_result[
-        "median_us"
-    ]
+    data_ptr_us = data_ptr_result["median_us"]
 
     # Approximate cost of accessing the four metadata fields
     # for three tensors.
     #
     # This is only a diagnostic estimate.
-    accessor_metadata_estimate_us = (
-        3
-        * (
-            shape_us
-            + dtype_us
-            + device_type_us
-            + device_id_us
-        )
-    )
+    accessor_metadata_estimate_us = 3 * (shape_us + dtype_us + device_type_us + device_id_us)
 
     # Approximate accessor work performed while creating three
     # TritonTensor wrappers if each wrapper performs:
@@ -670,119 +572,55 @@ def benchmark_add(
     #     data_ptr()
     #
     # This is also only diagnostic.
-    wrapper_accessor_estimate_us = (
-        3
-        * (
-            dtype_us
-            + data_ptr_us
-        )
-    )
+    wrapper_accessor_estimate_us = 3 * (dtype_us + data_ptr_us)
 
     # ========================================================
     # Print current workload
     # ========================================================
 
     print()
-    print(
-        "Operator-level latency:"
-    )
+    print("Operator-level latency:")
 
-    print(
-        f"  Native integrated:       "
-        f"{native_us:8.3f} us"
-    )
+    print(f"  Native integrated:       {native_us:8.3f} us")
 
-    print(
-        f"  Triton integrated:       "
-        f"{integrated_us:8.3f} us"
-    )
+    print(f"  Triton integrated:       {integrated_us:8.3f} us")
 
-    print(
-        f"  Triton pre-bound stream: "
-        f"{prebound_us:8.3f} us"
-    )
+    print(f"  Triton pre-bound stream: {prebound_us:8.3f} us")
 
-    print(
-        f"  Integrated - prebound:   "
-        f"{extra_us:8.3f} us"
-    )
+    print(f"  Integrated - prebound:   {extra_us:8.3f} us")
 
     print()
-    print(
-        "Integration component breakdown:"
-    )
+    print("Integration component breakdown:")
 
-    print(
-        f"  Metadata validation:     "
-        f"{metadata_us:8.3f} us"
-    )
+    print(f"  Metadata validation:     {metadata_us:8.3f} us")
 
-    print(
-        f"  TritonTensor wrappers:   "
-        f"{wrapper_us:8.3f} us"
-    )
+    print(f"  TritonTensor wrappers:   {wrapper_us:8.3f} us")
 
-    print(
-        f"  get_context_stream:      "
-        f"{get_stream_us:8.3f} us"
-    )
+    print(f"  get_context_stream:      {get_stream_us:8.3f} us")
 
-    print(
-        f"  stream context only:     "
-        f"{context_us:8.3f} us"
-    )
+    print(f"  stream context only:     {context_us:8.3f} us")
 
-    print(
-        f"  full stream bridge:      "
-        f"{bridge_us:8.3f} us"
-    )
+    print(f"  full stream bridge:      {bridge_us:8.3f} us")
 
     print()
-    print(
-        "Tensor accessor breakdown:"
-    )
+    print("Tensor accessor breakdown:")
 
-    print(
-        f"  shape():                 "
-        f"{shape_us:8.3f} us"
-    )
+    print(f"  shape():                 {shape_us:8.3f} us")
 
-    print(
-        f"  dtype():                 "
-        f"{dtype_us:8.3f} us"
-    )
+    print(f"  dtype():                 {dtype_us:8.3f} us")
 
-    print(
-        f"  device_type():           "
-        f"{device_type_us:8.3f} us"
-    )
+    print(f"  device_type():           {device_type_us:8.3f} us")
 
-    print(
-        f"  device_id():             "
-        f"{device_id_us:8.3f} us"
-    )
+    print(f"  device_id():             {device_id_us:8.3f} us")
 
-    print(
-        f"  data_ptr():              "
-        f"{data_ptr_us:8.3f} us"
-    )
+    print(f"  data_ptr():              {data_ptr_us:8.3f} us")
 
     print()
-    print(
-        "Diagnostic estimates:"
-    )
+    print("Diagnostic estimates:")
 
-    print(
-        f"  3-tensor metadata "
-        f"accessor estimate: "
-        f"{accessor_metadata_estimate_us:8.3f} us"
-    )
+    print(f"  3-tensor metadata accessor estimate: {accessor_metadata_estimate_us:8.3f} us")
 
-    print(
-        f"  3-wrapper "
-        f"dtype+data_ptr estimate: "
-        f"{wrapper_accessor_estimate_us:8.3f} us"
-    )
+    print(f"  3-wrapper dtype+data_ptr estimate: {wrapper_accessor_estimate_us:8.3f} us")
 
     # ========================================================
     # Return
@@ -791,29 +629,22 @@ def benchmark_add(
     return {
         "shape": shape,
         "dtype": dtype_name,
-
         "native_us": native_us,
         "integrated_us": integrated_us,
         "prebound_us": prebound_us,
         "extra_us": extra_us,
-
         "metadata_us": metadata_us,
         "wrapper_us": wrapper_us,
         "get_stream_us": get_stream_us,
         "context_us": context_us,
         "bridge_us": bridge_us,
-
         "shape_us": shape_us,
         "dtype_us": dtype_us,
         "device_type_us": device_type_us,
         "device_id_us": device_id_us,
         "data_ptr_us": data_ptr_us,
-
-        "accessor_metadata_estimate_us":
-            accessor_metadata_estimate_us,
-
-        "wrapper_accessor_estimate_us":
-            wrapper_accessor_estimate_us,
+        "accessor_metadata_estimate_us": accessor_metadata_estimate_us,
+        "wrapper_accessor_estimate_us": wrapper_accessor_estimate_us,
     }
 
 
@@ -823,26 +654,18 @@ def benchmark_add(
 
 
 if __name__ == "__main__":
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        "LLAISYS Triton Add Integration Microbenchmark"
-    )
+    print("LLAISYS Triton Add Integration Microbenchmark")
 
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
     test_cases = [
         ((2, 3), "f32"),
         ((33, 65), "f32"),
         ((512, 4096), "f32"),
-
         ((2, 3), "f16"),
         ((512, 4096), "f16"),
-
         ((2, 3), "bf16"),
         ((512, 4096), "bf16"),
     ]
@@ -855,43 +678,26 @@ if __name__ == "__main__":
             dtype_name,
         )
 
-        results.append(
-            result
-        )
+        results.append(result)
 
     # ========================================================
     # Operator summary
     # ========================================================
 
     print()
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        "Operator Summary"
-    )
+    print("Operator Summary")
 
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        f"{'Shape':>16} "
-        f"{'DType':>6} "
-        f"{'Native':>10} "
-        f"{'Integrated':>12} "
-        f"{'Prebound':>10} "
-        f"{'Extra':>10}"
-    )
+    print(f"{'Shape':>16} {'DType':>6} {'Native':>10} {'Integrated':>12} {'Prebound':>10} {'Extra':>10}")
 
-    print(
-        "-" * 72
-    )
+    print("-" * 72)
 
     for result in results:
         print(
-            f"{str(result['shape']):>16} "
+            f"{result['shape']!s:>16} "
             f"{result['dtype']:>6} "
             f"{result['native_us']:>9.2f}u "
             f"{result['integrated_us']:>11.2f}u "
@@ -904,35 +710,21 @@ if __name__ == "__main__":
     # ========================================================
 
     print()
-    print(
-        "============================================================"
-    )
+    print("============================================================")
+
+    print("Integration Breakdown")
+
+    print("============================================================")
 
     print(
-        "Integration Breakdown"
+        f"{'Shape':>16} {'DType':>6} {'Metadata':>10} {'Wrapper':>10} {'GetStream':>10} {'Context':>10} {'Bridge':>10}"
     )
 
-    print(
-        "============================================================"
-    )
-
-    print(
-        f"{'Shape':>16} "
-        f"{'DType':>6} "
-        f"{'Metadata':>10} "
-        f"{'Wrapper':>10} "
-        f"{'GetStream':>10} "
-        f"{'Context':>10} "
-        f"{'Bridge':>10}"
-    )
-
-    print(
-        "-" * 84
-    )
+    print("-" * 84)
 
     for result in results:
         print(
-            f"{str(result['shape']):>16} "
+            f"{result['shape']!s:>16} "
             f"{result['dtype']:>6} "
             f"{result['metadata_us']:>9.2f}u "
             f"{result['wrapper_us']:>9.2f}u "
@@ -946,35 +738,19 @@ if __name__ == "__main__":
     # ========================================================
 
     print()
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        "Tensor Accessor Breakdown"
-    )
+    print("Tensor Accessor Breakdown")
 
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        f"{'Shape':>16} "
-        f"{'DType':>6} "
-        f"{'Shape':>9} "
-        f"{'DType()':>9} "
-        f"{'DevType':>9} "
-        f"{'DevId':>9} "
-        f"{'DataPtr':>9}"
-    )
+    print(f"{'Shape':>16} {'DType':>6} {'Shape':>9} {'DType()':>9} {'DevType':>9} {'DevId':>9} {'DataPtr':>9}")
 
-    print(
-        "-" * 80
-    )
+    print("-" * 80)
 
     for result in results:
         print(
-            f"{str(result['shape']):>16} "
+            f"{result['shape']!s:>16} "
             f"{result['dtype']:>6} "
             f"{result['shape_us']:>8.2f}u "
             f"{result['dtype_us']:>8.2f}u "
@@ -988,32 +764,19 @@ if __name__ == "__main__":
     # ========================================================
 
     print()
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        "Accessor Diagnostic Estimates"
-    )
+    print("Accessor Diagnostic Estimates")
 
-    print(
-        "============================================================"
-    )
+    print("============================================================")
 
-    print(
-        f"{'Shape':>16} "
-        f"{'DType':>6} "
-        f"{'3xMetadata':>14} "
-        f"{'3xWrapper':>14}"
-    )
+    print(f"{'Shape':>16} {'DType':>6} {'3xMetadata':>14} {'3xWrapper':>14}")
 
-    print(
-        "-" * 56
-    )
+    print("-" * 56)
 
     for result in results:
         print(
-            f"{str(result['shape']):>16} "
+            f"{result['shape']!s:>16} "
             f"{result['dtype']:>6} "
             f"{result['accessor_metadata_estimate_us']:>13.2f}u "
             f"{result['wrapper_accessor_estimate_us']:>13.2f}u"
@@ -1024,39 +787,21 @@ if __name__ == "__main__":
     # ========================================================
 
     print()
-    print(
-        "NOTE:"
-    )
+    print("NOTE:")
 
-    print(
-        "  Integrated - prebound is NOT expected to equal the"
-    )
+    print("  Integrated - prebound is NOT expected to equal the")
 
-    print(
-        "  sum of individual component measurements."
-    )
+    print("  sum of individual component measurements.")
 
-    print(
-        "  GPU launches are asynchronous and host/GPU execution"
-    )
+    print("  GPU launches are asynchronous and host/GPU execution")
 
-    print(
-        "  can overlap."
-    )
+    print("  can overlap.")
 
     print()
-    print(
-        "  The accessor estimates are diagnostic only."
-    )
+    print("  The accessor estimates are diagnostic only.")
 
-    print(
-        "  They help determine whether repeated Python -> ctypes"
-    )
+    print("  They help determine whether repeated Python -> ctypes")
 
-    print(
-        "  -> C++ Tensor metadata queries are a significant"
-    )
+    print("  -> C++ Tensor metadata queries are a significant")
 
-    print(
-        "  source of per-operator overhead."
-    )
+    print("  source of per-operator overhead.")

@@ -1,19 +1,18 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
-import llaisys
 import torch
-
 from llaisys.triton.ops import add as triton_add
-
 from test_utils import (
-    random_tensor,
-    check_equal,
     benchmark_llaisys,
+    check_equal,
+    random_tensor,
 )
+
+import llaisys
 
 
 def torch_add(ans, a, b):
@@ -47,12 +46,7 @@ def test_op_add(
     backend_name="native",
     profile=False,
 ):
-    print(
-        f"   shape {shape} "
-        f"dtype <{dtype_name}> "
-        f"device <{device_name}> "
-        f"backend <{backend_name}>"
-    )
+    print(f"   shape {shape} dtype <{dtype_name}> device <{device_name}> backend <{backend_name}>")
 
     # PyTorch reference + LLAISYS tensors.
     a, a_ = random_tensor(
@@ -105,12 +99,7 @@ def test_op_add(
                 backend_name,
             ),
             device_name,
-            label=(
-                f"Add "
-                f"shape={shape} "
-                f"dtype={dtype_name} "
-                f"backend={backend_name}"
-            ),
+            label=(f"Add shape={shape} dtype={dtype_name} backend={backend_name}"),
         )
 
 
@@ -164,7 +153,7 @@ if __name__ == "__main__":
         ("bf16", 1e-3, 1e-3),
     ]
 
-    print(f"Testing Ops.add " f"on {args.device} " f"with {args.backend} backend")
+    print(f"Testing Ops.add on {args.device} with {args.backend} backend")
 
     for shape in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:

@@ -1,14 +1,10 @@
-import llaisys
 import torch
 
+import llaisys
 
-runtime = llaisys.RuntimeAPI(
-    llaisys.DeviceType.NVIDIA
-)
+runtime = llaisys.RuntimeAPI(llaisys.DeviceType.NVIDIA)
 
-stream_ptr = runtime.get_context_stream(
-    device_id=0
-)
+stream_ptr = runtime.get_context_stream(device_id=0)
 
 print(
     "LLAISYS runtime stream:",
@@ -28,9 +24,6 @@ print(
     hex(external_stream.cuda_stream),
 )
 
-assert (
-    int(external_stream.cuda_stream)
-    == stream_ptr
-)
+assert int(external_stream.cuda_stream) == stream_ptr
 
 print("Stream pointer bridge OK")

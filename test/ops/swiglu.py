@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(
     os.path.join(
@@ -9,14 +9,14 @@ parent_dir = os.path.abspath(
 )
 sys.path.insert(0, parent_dir)
 
-import llaisys
 import torch
-
 from test_utils import (
-    random_tensor,
-    check_equal,
     benchmark_llaisys,
+    check_equal,
+    random_tensor,
 )
+
+import llaisys
 
 
 def torch_swiglu(out, gate, up):
@@ -46,7 +46,7 @@ def test_op_swiglu(
     device_name="cpu",
     profile=False,
 ):
-    print(f"   shape {shape} " f"dtype <{dtype_name}>")
+    print(f"   shape {shape} dtype <{dtype_name}>")
 
     gate, gate_ = random_tensor(
         shape,
@@ -101,7 +101,7 @@ def test_op_swiglu(
                 up_,
             ),
             device_name,
-            label=(f"SwiGLU " f"shape={shape} " f"dtype={dtype_name}"),
+            label=(f"SwiGLU shape={shape} dtype={dtype_name}"),
         )
 
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         ("bf16", 1e-2, 1e-2),
     ]
 
-    print(f"Testing Ops.swiglu " f"on {args.device}")
+    print(f"Testing Ops.swiglu on {args.device}")
 
     for shape in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
@@ -153,4 +153,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print("\033[92m" "Test passed!" "\033[0m\n")
+    print("\033[92mTest passed!\033[0m\n")

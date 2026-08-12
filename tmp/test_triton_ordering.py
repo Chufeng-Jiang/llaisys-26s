@@ -21,14 +21,13 @@ sys.path.insert(
 # Imports
 # ============================================================
 
-import llaisys
-
 from llaisys.triton.ops import add as triton_add
-
 from test_utils import (
-    random_tensor,
     check_equal,
+    random_tensor,
 )
+
+import llaisys
 
 
 def test_ordering(
@@ -139,10 +138,7 @@ if __name__ == "__main__":
 
     rounds = 100
 
-    print(
-        "Testing Native -> Triton -> Native "
-        "stream ordering"
-    )
+    print("Testing Native -> Triton -> Native stream ordering")
 
     for round_idx in range(rounds):
         for shape, dtype_name, atol, rtol in test_cases:
@@ -154,13 +150,6 @@ if __name__ == "__main__":
             )
 
         if (round_idx + 1) % 10 == 0:
-            print(
-                f"  completed "
-                f"{round_idx + 1}/{rounds} rounds"
-            )
+            print(f"  completed {round_idx + 1}/{rounds} rounds")
 
-    print(
-        "\033[92m"
-        "Native -> Triton -> Native ordering test passed!"
-        "\033[0m"
-    )
+    print("\033[92mNative -> Triton -> Native ordering test passed!\033[0m")

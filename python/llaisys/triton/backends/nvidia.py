@@ -2,9 +2,8 @@ from contextlib import contextmanager
 
 import torch
 
-from .base import TritonBackend
 from ...libllaisys import DataType
-
+from .base import TritonBackend
 
 _NVIDIA_TRITON_DTYPES = {
     DataType.F32: torch.float32,
@@ -17,24 +16,17 @@ def to_triton_dtype(dtype: DataType):
     try:
         return _NVIDIA_TRITON_DTYPES[dtype]
     except KeyError as exc:
-        raise TypeError(
-            f"Unsupported NVIDIA Triton dtype: {dtype}"
-        ) from exc
+        raise TypeError(f"Unsupported NVIDIA Triton dtype: {dtype}") from exc
 
 
 class NvidiaTritonBackend(TritonBackend):
-
     def __init__(self):
-        # Cache PyTorch wrappers for LLAISYS-owned CUDA streams.
-        #
-        # key:
-        #     (device_id, raw cudaStream_t)
-        #
-        # value:
-        #     torch.cuda.ExternalStream
-        #
-        # LLAISYS remains the owner of the real CUDA stream.
         self._streams = {}
+
+        # Active execution context state.
+        self._execution_depth = 0
+        self._active_stream_ptr = None
+        self._active_device_id = None
 
     def add_config(
         self,
@@ -51,10 +43,7 @@ class NvidiaTritonBackend(TritonBackend):
         device_id: int,
     ):
         if stream_ptr == 0:
-            raise ValueError(
-                "NVIDIA Triton requires a valid "
-                "LLAISYS CUDA stream"
-            )
+            raise ValueError("NVIDIA Triton requires a valid LLAISYS CUDA stream")
 
         key = (
             device_id,
@@ -69,6 +58,15 @@ class NvidiaTritonBackend(TritonBackend):
 
         return self._streams[key]
 
+    def in_execution_context(
+        self,
+        stream_ptr: int,
+        device_id: int,
+    ) -> bool:
+        return (
+            self._execution_depth > 0 and self._active_stream_ptr == stream_ptr and self._active_device_id == device_id
+        )
+
     @contextmanager
     def stream_context(
         self,
@@ -80,7 +78,42 @@ class NvidiaTritonBackend(TritonBackend):
             device_id,
         )
 
-        with torch.cuda.stream(
-            external_stream
-        ):
+        with torch.cuda.stream(external_stream):
             yield
+
+    @contextmanager
+    def execution_context(
+        self,
+        stream_ptr: int,
+        device_id: int,
+    ):
+        # Nested use on the same stream is allowed.
+        if self._execution_depth > 0:
+            if self._active_stream_ptr != stream_ptr or self._active_device_id != device_id:
+                raise RuntimeError("Cannot enter a different NVIDIA Triton stream while an execution context is active")
+
+            self._execution_depth += 1
+
+            try:
+                yield
+            finally:
+                self._execution_depth -= 1
+
+            return
+
+        external_stream = self._get_external_stream(
+            stream_ptr,
+            device_id,
+        )
+
+        self._active_stream_ptr = stream_ptr
+        self._active_device_id = device_id
+        self._execution_depth = 1
+
+        try:
+            with torch.cuda.stream(external_stream):
+                yield
+        finally:
+            self._execution_depth = 0
+            self._active_stream_ptr = None
+            self._active_device_id = None

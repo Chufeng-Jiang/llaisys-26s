@@ -1,12 +1,14 @@
 import triton
 
+from ..libllaisys import DeviceType
+from ..runtime import RuntimeAPI
 from .backends.nvidia import NvidiaTritonBackend
 from .kernels.add import add_kernel
 from .tensor import as_nvidia_triton_tensor
 
-from ..runtime import RuntimeAPI
-from ..libllaisys import DeviceType
-
+# ============================================================
+# NVIDIA Triton backend / runtime
+# ============================================================
 
 _nvidia_backend = NvidiaTritonBackend()
 _nvidia_runtime = RuntimeAPI(DeviceType.NVIDIA)
@@ -38,31 +40,16 @@ def add(c, a, b):
     # ============================================================
 
     if c_shape != a_shape or c_shape != b_shape:
-        raise ValueError(
-            "Triton Add requires tensors with the same shape"
-        )
+        raise ValueError("Triton Add requires tensors with the same shape")
 
     if c_dtype != a_dtype or c_dtype != b_dtype:
-        raise ValueError(
-            "Triton Add requires tensors with the same dtype"
-        )
+        raise ValueError("Triton Add requires tensors with the same dtype")
 
-    if (
-        c_device_type != DeviceType.NVIDIA
-        or a_device_type != DeviceType.NVIDIA
-        or b_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError(
-            "NVIDIA Triton Add requires NVIDIA tensors"
-        )
+    if c_device_type != DeviceType.NVIDIA or a_device_type != DeviceType.NVIDIA or b_device_type != DeviceType.NVIDIA:
+        raise ValueError("NVIDIA Triton Add requires NVIDIA tensors")
 
-    if (
-        c_device_id != a_device_id
-        or c_device_id != b_device_id
-    ):
-        raise ValueError(
-            "Triton Add requires tensors on the same device"
-        )
+    if c_device_id != a_device_id or c_device_id != b_device_id:
+        raise ValueError("Triton Add requires tensors on the same device")
 
     # ============================================================
     # Numel
@@ -85,7 +72,10 @@ def add(c, a, b):
     block_size = config["BLOCK_SIZE"]
 
     grid = (
-        triton.cdiv(numel, block_size),
+        triton.cdiv(
+            numel,
+            block_size,
+        ),
     )
 
     # ============================================================
@@ -93,18 +83,33 @@ def add(c, a, b):
     # ============================================================
 
     c_triton = as_nvidia_triton_tensor(c)
+
     a_triton = as_nvidia_triton_tensor(a)
+
     b_triton = as_nvidia_triton_tensor(b)
 
     # ============================================================
     # LLAISYS stream
     # ============================================================
 
-    stream_ptr = _nvidia_runtime.get_context_stream(
-        c_device_id
-    )
+    stream_ptr = _nvidia_runtime.get_context_stream(c_device_id)
 
-    with _nvidia_backend.stream_context(
+    # ============================================================
+    # Launch
+    #
+    # Case 1:
+    # An execution-level stream context is already active.
+    #
+    # Do NOT enter torch.cuda.stream(...) again.
+    #
+    # Case 2:
+    # add() is called standalone.
+    #
+    # Enter the LLAISYS stream context locally so standalone
+    # calls remain correct.
+    # ============================================================
+
+    if _nvidia_backend.in_execution_context(
         stream_ptr,
         c_device_id,
     ):
@@ -116,5 +121,19 @@ def add(c, a, b):
             BLOCK_SIZE=block_size,
             num_warps=config["num_warps"],
         )
+
+    else:
+        with _nvidia_backend.stream_context(
+            stream_ptr,
+            c_device_id,
+        ):
+            add_kernel[grid](
+                c_triton,
+                a_triton,
+                b_triton,
+                numel,
+                BLOCK_SIZE=block_size,
+                num_warps=config["num_warps"],
+            )
 
     return c

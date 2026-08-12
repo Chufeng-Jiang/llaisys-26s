@@ -1,6 +1,6 @@
-from .tensor import llaisysTensor_t
-
 from ctypes import c_float, c_int
+
+from .tensor import llaisysTensor_t
 
 
 def load_ops(lib):

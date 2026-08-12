@@ -59,11 +59,11 @@ using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
 using llaisys::device::nvidia::CUDA_WARP_SIZE;
 using llaisys::device::nvidia::from_float;
-using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_device_properties;
 using llaisys::device::nvidia::run_on_cuda_device_noexcept;
 using llaisys::device::nvidia::to_cuda_stream;
 using llaisys::device::nvidia::to_float;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 
 using llaisys::utils::checked_product;
 

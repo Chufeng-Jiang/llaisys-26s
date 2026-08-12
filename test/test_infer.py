@@ -5,12 +5,12 @@ import os
 import sys
 import time
 
-import llaisys
 import torch
-
 from huggingface_hub import snapshot_download
 from test_utils import *
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import llaisys
 
 sys.stdout = io.TextIOWrapper(
     sys.stdout.buffer,
@@ -26,9 +26,9 @@ def load_hf_model(
     device_name="cpu",
 ):
     if model_path and os.path.isdir(model_path):
-        print(f"Loading model from local path: " f"{model_path}")
+        print(f"Loading model from local path: {model_path}")
     else:
-        print(f"Loading model from Hugging Face: " f"{MODEL_ID}")
+        print(f"Loading model from Hugging Face: {MODEL_ID}")
 
         model_path = snapshot_download(MODEL_ID)
 
@@ -254,13 +254,13 @@ if __name__ == "__main__":
 
     print("Inference configuration")
 
-    print(f"LLAISYS device : " f"{args.device}")
+    print(f"LLAISYS device : {args.device}")
 
-    print(f"HF device      : " f"{hf_device_name}")
+    print(f"HF device      : {hf_device_name}")
 
-    print(f"Prompt         : " f"{args.prompt}")
+    print(f"Prompt         : {args.prompt}")
 
-    print(f"Max new tokens : " f"{args.max_steps}")
+    print(f"Max new tokens : {args.max_steps}")
 
     print("============================================================")
 
@@ -321,13 +321,13 @@ if __name__ == "__main__":
 
     print("\n")
 
-    print(f"Time elapsed: " f"{hf_elapsed:.2f}s\n")
+    print(f"Time elapsed: {hf_elapsed:.2f}s\n")
 
     # ============================================================
     # LLAISYS
     # ============================================================
 
-    print(f"Loading LLAISYS model on " f"{args.device}...")
+    print(f"Loading LLAISYS model on {args.device}...")
 
     model = load_llaisys_model(
         model_path,
@@ -362,7 +362,7 @@ if __name__ == "__main__":
 
     print("\n")
 
-    print(f"Time elapsed: " f"{llaisys_elapsed:.2f}s\n")
+    print(f"Time elapsed: {llaisys_elapsed:.2f}s\n")
 
     # ============================================================
     # Exact token verification
@@ -370,11 +370,7 @@ if __name__ == "__main__":
 
     if args.test:
         assert llaisys_tokens == tokens, (
-            "Token mismatch between "
-            "Hugging Face and LLAISYS.\n"
-            f"HF tokens:\n{tokens}\n"
-            f"LLAISYS tokens:\n"
-            f"{llaisys_tokens}"
+            f"Token mismatch between Hugging Face and LLAISYS.\nHF tokens:\n{tokens}\nLLAISYS tokens:\n{llaisys_tokens}"
         )
 
-        print("\033[92m" "Test passed!" "\033[0m\n")
+        print("\033[92mTest passed!\033[0m\n")

@@ -1,14 +1,13 @@
+from ctypes import byref, c_void_p
+
 from . import libllaisys
 from .libllaisys import LIB_LLAISYS
-from ctypes import byref, c_void_p
 
 
 class RuntimeAPI:
     def __init__(self, device_type: libllaisys.DeviceType):
         self._device_type = device_type
-        self._api = LIB_LLAISYS.llaisysGetRuntimeAPI(
-            libllaisys.llaisysDeviceType_t(device_type)
-        )
+        self._api = LIB_LLAISYS.llaisysGetRuntimeAPI(libllaisys.llaisysDeviceType_t(device_type))
 
     def get_device_count(self) -> int:
         result = self._api.contents.get_device_count()
@@ -52,9 +51,7 @@ class RuntimeAPI:
         size: int,
         kind: libllaisys.MemcpyKind,
     ) -> None:
-        self._api.contents.memcpy_sync(
-            dst, src, size, libllaisys.llaisysMemcpyKind_t(kind)
-        )
+        self._api.contents.memcpy_sync(dst, src, size, libllaisys.llaisysMemcpyKind_t(kind))
 
     def memcpy_async(
         self,
@@ -64,9 +61,7 @@ class RuntimeAPI:
         kind: libllaisys.MemcpyKind,
         stream: libllaisys.llaisysStream_t,
     ) -> None:
-        self._api.contents.memcpy_async(
-            dst, src, size, libllaisys.llaisysMemcpyKind_t(kind), stream
-        )
+        self._api.contents.memcpy_async(dst, src, size, libllaisys.llaisysMemcpyKind_t(kind), stream)
 
     def get_context_stream(
         self,

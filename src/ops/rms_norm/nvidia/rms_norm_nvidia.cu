@@ -38,8 +38,8 @@ namespace nvidia_detail = llaisys::ops::nvidia::detail;
 
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_WARP_SIZE;
-using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::to_cuda_stream;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 
 // ============================================================
 // NVIDIA-specific RMSNorm tuning
@@ -79,10 +79,8 @@ void launch_nvidia_rms_norm_kernel(
     //
     // Both shared and CUB kernels use a row-level
     // grid-stride loop, so the grid may be capped.
-    const std::size_t grid_size = get_capped_grid_size(
-    nrow,
-    1,
-    llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
+    const std::size_t grid_size
+        = get_capped_grid_size(nrow, 1, llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
 
     const bool use_packed_kernel = cuda_compat::can_use_packed_rms_norm<T>(out, in, weight, ncol);
 

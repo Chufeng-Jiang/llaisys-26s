@@ -1,5 +1,6 @@
-import llaisys
 import torch
+
+import llaisys
 
 
 def random_tensor(
@@ -170,7 +171,7 @@ def check_equal(
         if strides[i] > 0:
             right += strides[i] * (shape[i] - 1)
         else:
-            raise ValueError("Negative strides are not " "supported yet")
+            raise ValueError("Negative strides are not supported yet")
 
     result_device_name = device_name(llaisys_result.device_type())
 
@@ -298,9 +299,7 @@ def check_equal(
 
     allowed_error = float(atol) + float(rtol) * abs(answer_value)
 
-    error_over_allowed = (
-        worst_abs_error / allowed_error if allowed_error > 0 else float("inf")
-    )
+    error_over_allowed = worst_abs_error / allowed_error if allowed_error > 0 else float("inf")
 
     # ========================================================
     # Print compact diagnostics
@@ -313,48 +312,48 @@ def check_equal(
 
     print(f"shape             = {shape}")
 
-    print(f"dtype             = " f"{torch_answer.dtype}")
+    print(f"dtype             = {torch_answer.dtype}")
 
     print(f"strict            = {strict}")
 
-    print(f"atol              = " f"{atol:.10e}")
+    print(f"atol              = {atol:.10e}")
 
-    print(f"rtol              = " f"{rtol:.10e}")
-
-    print()
-
-    print(f"mismatch_count    = " f"{mismatch_count}")
-
-    print(f"total_count       = " f"{total_count}")
-
-    print(f"mismatch_ratio    = " f"{mismatch_ratio:.10%}")
+    print(f"rtol              = {rtol:.10e}")
 
     print()
 
-    print(f"max_abs_error     = " f"{max_abs_error:.10e}")
+    print(f"mismatch_count    = {mismatch_count}")
 
-    print(f"max_rel_error     = " f"{max_rel_error:.10e}")
+    print(f"total_count       = {total_count}")
+
+    print(f"mismatch_ratio    = {mismatch_ratio:.10%}")
+
+    print()
+
+    print(f"max_abs_error     = {max_abs_error:.10e}")
+
+    print(f"max_rel_error     = {max_rel_error:.10e}")
 
     print()
     print("Worst failed element")
     print("----------------------------------------")
 
-    print(f"flat_index        = " f"{worst_flat_index}")
+    print(f"flat_index        = {worst_flat_index}")
 
-    print(f"index             = " f"{worst_index}")
+    print(f"index             = {worst_index}")
 
-    print(f"LLAISYS           = " f"{result_value:.10e}")
+    print(f"LLAISYS           = {result_value:.10e}")
 
-    print(f"Torch             = " f"{answer_value:.10e}")
+    print(f"Torch             = {answer_value:.10e}")
 
-    print(f"abs_error         = " f"{worst_abs_error:.10e}")
+    print(f"abs_error         = {worst_abs_error:.10e}")
 
-    print(f"rel_error         = " f"{worst_rel_error:.10e}")
+    print(f"rel_error         = {worst_rel_error:.10e}")
 
     if not strict:
-        print(f"allowed_error     = " f"{allowed_error:.10e}")
+        print(f"allowed_error     = {allowed_error:.10e}")
 
-        print(f"error / allowed   = " f"{error_over_allowed:.6f}x")
+        print(f"error / allowed   = {error_over_allowed:.6f}x")
 
     print("========================================")
     print()
@@ -457,7 +456,7 @@ def benchmark(
     )
 
     if device_name == "metax":
-        print("        Torch comparison skipped: " "the reference tensor is on CPU.")
+        print("        Torch comparison skipped: the reference tensor is on CPU.")
         return {
             "torch": None,
             "llaisys": llaisys_stats,
@@ -474,7 +473,7 @@ def benchmark(
             torch.cuda.synchronize()
 
     else:
-        raise ValueError(f"Unsupported benchmark device: " f"{device_name}")
+        raise ValueError(f"Unsupported benchmark device: {device_name}")
 
     torch_stats = _benchmark_function(
         torch_func,
@@ -484,12 +483,9 @@ def benchmark(
         rounds=rounds,
     )
 
-    print(f"        Torch {device_name}: " f"median={torch_stats['median_ms']:.5f} ms")
+    print(f"        Torch {device_name}: median={torch_stats['median_ms']:.5f} ms")
 
-    print(
-        f"        Speedup: "
-        f"{torch_stats['median_ms'] / llaisys_stats['median_ms']:.3f}x"
-    )
+    print(f"        Speedup: {torch_stats['median_ms'] / llaisys_stats['median_ms']:.3f}x")
 
     return {
         "torch": torch_stats,

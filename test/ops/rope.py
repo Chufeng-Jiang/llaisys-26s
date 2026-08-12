@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(
     os.path.join(
@@ -9,15 +9,15 @@ parent_dir = os.path.abspath(
 )
 sys.path.insert(0, parent_dir)
 
-import llaisys
 import torch
-
 from test_utils import (
     arrange_tensor,
-    random_tensor,
-    check_equal,
     benchmark_llaisys,
+    check_equal,
+    random_tensor,
 )
+
+import llaisys
 
 
 def torch_rope(
@@ -88,7 +88,7 @@ def test_op_rope(
     device_name="cpu",
     profile=False,
 ):
-    print(f"   shape {shape} " f"range {start_end} " f"dtype <{dtype_name}>")
+    print(f"   shape {shape} range {start_end} dtype <{dtype_name}>")
 
     x, x_ = random_tensor(
         shape,
@@ -148,9 +148,7 @@ def test_op_rope(
                 theta,
             ),
             device_name,
-            label=(
-                f"RoPE " f"shape={shape} " f"range={start_end} " f"dtype={dtype_name}"
-            ),
+            label=(f"RoPE shape={shape} range={start_end} dtype={dtype_name}"),
         )
 
 
@@ -239,7 +237,7 @@ if __name__ == "__main__":
         ("bf16", 1e-2, 1e-2),
     ]
 
-    print(f"Testing Ops.rope " f"on {args.device}")
+    print(f"Testing Ops.rope on {args.device}")
 
     for shape, start_end in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
@@ -253,4 +251,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print("\033[92m" "Test passed!" "\033[0m\n")
+    print("\033[92mTest passed!\033[0m\n")

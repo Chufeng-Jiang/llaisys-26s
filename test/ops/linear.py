@@ -13,14 +13,14 @@ sys.path.insert(
     parent_dir,
 )
 
-import llaisys
 import torch
-
 from test_utils import (
     benchmark,
     check_equal,
     random_tensor,
 )
+
+import llaisys
 
 
 def torch_linear(
@@ -48,13 +48,7 @@ def test_op_linear(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   out {out_shape}, "
-        f"x {x_shape}, "
-        f"w {w_shape}, "
-        f"bias {use_bias}, "
-        f"dtype <{dtype_name}>"
-    )
+    print(f"   out {out_shape}, x {x_shape}, w {w_shape}, bias {use_bias}, dtype <{dtype_name}>")
 
     x, x_ = random_tensor(
         x_shape,
@@ -217,7 +211,7 @@ if __name__ == "__main__":
         ),
     ]
 
-    print(f"Testing Ops.linear on " f"{args.device}")
+    print(f"Testing Ops.linear on {args.device}")
 
     for shapes in test_shapes:
         for (

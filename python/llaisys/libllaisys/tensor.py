@@ -11,7 +11,6 @@ from .error import (
     make_handle_checker,
     make_status_checker,
 )
-
 from .llaisys_types import (
     llaisysDataType_t,
     llaisysDeviceType_t,

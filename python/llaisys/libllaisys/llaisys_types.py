@@ -54,11 +54,11 @@ llaisysMemcpyKind_t = ctypes.c_int
 llaisysStream_t = ctypes.c_void_p
 
 __all__ = [
-    "llaisysDeviceType_t",
-    "DeviceType",
-    "llaisysDataType_t",
     "DataType",
-    "llaisysMemcpyKind_t",
+    "DeviceType",
     "MemcpyKind",
+    "llaisysDataType_t",
+    "llaisysDeviceType_t",
+    "llaisysMemcpyKind_t",
     "llaisysStream_t",
 ]

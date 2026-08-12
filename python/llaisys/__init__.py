@@ -1,20 +1,18 @@
-from .runtime import RuntimeAPI
-from .libllaisys import DeviceType
-from .libllaisys import DataType
-from .libllaisys import MemcpyKind
-from .libllaisys import llaisysStream_t as Stream
-from .tensor import Tensor
-from .ops import Ops
 from . import models
+from .libllaisys import DataType, DeviceType, MemcpyKind
+from .libllaisys import llaisysStream_t as Stream
 from .models import *
+from .ops import Ops
+from .runtime import RuntimeAPI
+from .tensor import Tensor
 
 __all__ = [
-    "RuntimeAPI",
-    "DeviceType",
     "DataType",
+    "DeviceType",
     "MemcpyKind",
+    "Ops",
+    "RuntimeAPI",
     "Stream",
     "Tensor",
-    "Ops",
     "models",
 ]

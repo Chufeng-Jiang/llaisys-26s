@@ -111,12 +111,7 @@ for name in sorted(all_tensors):
     if name.startswith(layer_zero_prefix):
         info = all_tensors[name]
 
-        print(
-            f"{name}: "
-            f"dtype={info['dtype']}, "
-            f"shape={info['shape']}, "
-            f"file={info['file']}"
-        )
+        print(f"{name}: dtype={info['dtype']}, shape={info['shape']}, file={info['file']}")
 
 layer_indices = set()
 
@@ -139,11 +134,7 @@ print("Layer count:", len(layer_indices))
 expected_layer_count = int(config["num_hidden_layers"])
 
 if len(layer_indices) != expected_layer_count:
-    raise RuntimeError(
-        "Layer count mismatch: "
-        f"config={expected_layer_count}, "
-        f"weights={len(layer_indices)}"
-    )
+    raise RuntimeError(f"Layer count mismatch: config={expected_layer_count}, weights={len(layer_indices)}")
 
 required_suffixes = [
     "input_layernorm.weight",
@@ -166,7 +157,7 @@ missing = []
 
 for layer_index in range(expected_layer_count):
     for suffix in required_suffixes:
-        name = f"model.layers.{layer_index}." f"{suffix}"
+        name = f"model.layers.{layer_index}.{suffix}"
 
         if name not in all_tensors:
             missing.append(name)

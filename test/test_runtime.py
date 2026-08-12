@@ -1,7 +1,9 @@
-import llaisys
+import argparse
+
 import torch
 from test_utils import *
-import argparse
+
+import llaisys
 
 
 def test_basic_runtime_api(device_name: str = "cpu"):

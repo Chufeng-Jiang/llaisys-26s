@@ -14,9 +14,9 @@ namespace {
 
 namespace cuda_compat = llaisys::ops::cuda_compat;
 
-using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_cuda_stream;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 
 // ============================================================
 // NVIDIA SwiGLU adapter
@@ -57,10 +57,9 @@ void launch_nvidia_swiglu(
 
     const unsigned int block_size = get_warp_aligned_block_size(work_items);
 
-const std::size_t grid_size = get_capped_grid_size(
-    work_items,
-    static_cast<std::size_t>(block_size),
-    llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
+    const std::size_t grid_size = get_capped_grid_size(
+        work_items, static_cast<std::size_t>(block_size),
+        llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
 
     // ========================================================
     // Shared CUDA-compatible implementation

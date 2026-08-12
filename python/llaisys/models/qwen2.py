@@ -2,19 +2,18 @@ import ctypes
 import json
 import mmap
 import struct
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from ..libllaisys import (
+    LIB_LLAISYS,
     DataType,
     DeviceType,
-    LIB_LLAISYS,
     LlaisysQwen2Meta,
 )
 
 
 class Qwen2:
-
     _SAFETENSORS_DTYPES = {
         "BF16": (DataType.BF16, 2),
         "F16": (DataType.F16, 2),
@@ -37,9 +36,7 @@ class Qwen2:
         self._weights_loaded = False
 
         if not self.model_path.is_dir():
-            raise FileNotFoundError(
-                f"Model directory does not exist: {self.model_path}"
-            )
+            raise FileNotFoundError(f"Model directory does not exist: {self.model_path}")
 
         config_path = self.model_path / "config.json"
 
@@ -55,9 +52,7 @@ class Qwen2:
         self.device = DeviceType(device)
         self.device_id = 0
 
-        dtype_name = (
-            self.config.get("torch_dtype") or self.config.get("dtype") or "bfloat16"
-        )
+        dtype_name = self.config.get("torch_dtype") or self.config.get("dtype") or "bfloat16"
 
         dtype = self._parse_dtype(dtype_name)
 
@@ -66,11 +61,9 @@ class Qwen2:
         num_attention_heads = int(self.config["num_attention_heads"])
 
         if hidden_size % num_attention_heads != 0:
-            raise ValueError("hidden_size must be divisible by " "num_attention_heads.")
+            raise ValueError("hidden_size must be divisible by num_attention_heads.")
 
-        head_dim = int(
-            self.config.get("head_dim") or hidden_size // num_attention_heads
-        )
+        head_dim = int(self.config.get("head_dim") or hidden_size // num_attention_heads)
 
         eos_token_id = self.config.get(
             "eos_token_id",
@@ -173,9 +166,7 @@ class Qwen2:
             header_bytes = file.read(header_length)
 
             if len(header_bytes) != header_length:
-                raise RuntimeError(
-                    "Failed to read complete safetensors " f"header: {file_path}"
-                )
+                raise RuntimeError(f"Failed to read complete safetensors header: {file_path}")
 
         header = json.loads(header_bytes.decode("utf-8"))
 
@@ -192,9 +183,7 @@ class Qwen2:
                     continue
 
                 if tensor_name in manifest:
-                    raise RuntimeError(
-                        "Duplicate tensor in safetensors files: " f"{tensor_name}"
-                    )
+                    raise RuntimeError(f"Duplicate tensor in safetensors files: {tensor_name}")
 
                 manifest[tensor_name] = {
                     "file_path": file_path,
@@ -266,10 +255,7 @@ class Qwen2:
         safetensors_dtype = tensor_info["dtype"]
 
         if safetensors_dtype not in self._SAFETENSORS_DTYPES:
-            raise ValueError(
-                "Unsupported safetensors dtype "
-                f"{safetensors_dtype} for {tensor_name}."
-            )
+            raise ValueError(f"Unsupported safetensors dtype {safetensors_dtype} for {tensor_name}.")
 
         llaisys_dtype, element_size = self._SAFETENSORS_DTYPES[safetensors_dtype]
 
@@ -369,16 +355,12 @@ class Qwen2:
         manifest = self._build_tensor_manifest()
         targets = self._build_weight_targets()
 
-        missing_weights = [
-            tensor_name for tensor_name in targets if tensor_name not in manifest
-        ]
+        missing_weights = [tensor_name for tensor_name in targets if tensor_name not in manifest]
 
         if missing_weights:
             missing_text = "\n".join(missing_weights)
 
-            raise RuntimeError(
-                "Required Qwen2 weights are missing:\n" f"{missing_text}"
-            )
+            raise RuntimeError(f"Required Qwen2 weights are missing:\n{missing_text}")
 
         targets_by_file = {}
 
@@ -401,7 +383,7 @@ class Qwen2:
         loaded_weights = 0
 
         print(
-            f"Loading {total_weights} Qwen2 weights " f"to {self.device.name}...",
+            f"Loading {total_weights} Qwen2 weights to {self.device.name}...",
             flush=True,
         )
 
@@ -439,9 +421,7 @@ class Qwen2:
 
                         if loaded_weights % 25 == 0 or loaded_weights == total_weights:
                             print(
-                                "Loaded Qwen2 weights: "
-                                f"{loaded_weights}/"
-                                f"{total_weights}",
+                                f"Loaded Qwen2 weights: {loaded_weights}/{total_weights}",
                                 flush=True,
                             )
 
@@ -542,8 +522,7 @@ class Qwen2:
 
         if top_k != 1:
             raise NotImplementedError(
-                "Current Qwen2 implementation only supports "
-                "greedy argmax generation with top_k=1."
+                "Current Qwen2 implementation only supports greedy argmax generation with top_k=1."
             )
 
         if max_new_tokens is None:
@@ -557,10 +536,10 @@ class Qwen2:
         output_tokens = [int(token) for token in inputs]
 
         if not output_tokens:
-            raise ValueError("Qwen2 generation requires at least " "one input token.")
+            raise ValueError("Qwen2 generation requires at least one input token.")
 
         if len(output_tokens) > int(self.meta.maxseq):
-            raise ValueError("Qwen2 input exceeds maximum " "sequence length.")
+            raise ValueError("Qwen2 input exceeds maximum sequence length.")
 
         LIB_LLAISYS.llaisysQwen2ModelReset(self._model)
 

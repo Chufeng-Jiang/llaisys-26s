@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(
     os.path.join(
@@ -9,15 +9,15 @@ parent_dir = os.path.abspath(
 )
 sys.path.insert(0, parent_dir)
 
-import llaisys
 import torch
-
 from test_utils import (
-    random_tensor,
-    check_equal,
     benchmark,
+    check_equal,
+    random_tensor,
     zero_tensor,
 )
+
+import llaisys
 
 
 def torch_argmax(
@@ -42,7 +42,7 @@ def test_op_argmax(
     device_name="cpu",
     profile=False,
 ):
-    print(f"   shape {shape} " f"dtype <{dtype_name}>")
+    print(f"   shape {shape} dtype <{dtype_name}>")
 
     vals, vals_ = random_tensor(
         shape,
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         "bf16",
     ]
 
-    print(f"Testing Ops.argmax on " f"{args.device}")
+    print(f"Testing Ops.argmax on {args.device}")
 
     for shape in test_shapes:
         for dtype_name in test_dtypes:

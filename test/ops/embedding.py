@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 parent_dir = os.path.abspath(
     os.path.join(
@@ -9,14 +9,14 @@ parent_dir = os.path.abspath(
 )
 sys.path.insert(0, parent_dir)
 
-import llaisys
-
 from test_utils import (
+    benchmark_llaisys,
+    check_equal,
     random_int_tensor,
     random_tensor,
-    check_equal,
-    benchmark_llaisys,
 )
+
+import llaisys
 
 
 def torch_embedding(
@@ -34,9 +34,7 @@ def test_op_embedding(
     device_name="cpu",
     profile=False,
 ):
-    print(
-        f"   idx_shape {idx_shape} " f"embd_shape {embd_shape} " f"dtype <{dtype_name}>"
-    )
+    print(f"   idx_shape {idx_shape} embd_shape {embd_shape} dtype <{dtype_name}>")
 
     # ========================================================
     # Prepare embedding table
@@ -121,12 +119,7 @@ def test_op_embedding(
                 embd_,
             ),
             device_name,
-            label=(
-                f"Embedding "
-                f"idx_shape={idx_shape} "
-                f"embd_shape={embd_shape} "
-                f"dtype={dtype_name}"
-            ),
+            label=(f"Embedding idx_shape={idx_shape} embd_shape={embd_shape} dtype={dtype_name}"),
         )
 
 
@@ -170,7 +163,7 @@ if __name__ == "__main__":
         "bf16",
     ]
 
-    print(f"Testing Ops.embedding " f"on {args.device}")
+    print(f"Testing Ops.embedding on {args.device}")
 
     for idx_shape, embd_shape in test_shapes:
         for dtype_name in test_dtypes:
@@ -182,4 +175,4 @@ if __name__ == "__main__":
                 args.profile,
             )
 
-    print("\033[92m" "Test passed!" "\033[0m\n")
+    print("\033[92mTest passed!\033[0m\n")

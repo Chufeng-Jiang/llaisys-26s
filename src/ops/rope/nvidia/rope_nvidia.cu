@@ -15,9 +15,9 @@ namespace {
 
 namespace cuda_compat = llaisys::ops::cuda_compat;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
-using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_cuda_stream;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::utils::checked_product;
 
 // ============================================================
