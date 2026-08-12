@@ -164,8 +164,7 @@ __global__ void rms_norm_packed_kernel(
         float thread_square_sum = 0.0F;
 
         for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
-             pack_index < pack_count;
-             pack_index += BLOCK_SIZE) {
+             pack_index < pack_count; pack_index += BLOCK_SIZE) {
             const Packed128 input_pack = packed_in[pack_index];
 
             const T *input_values = reinterpret_cast<const T *>(&input_pack);
@@ -190,8 +189,7 @@ __global__ void rms_norm_packed_kernel(
         __syncthreads();
 
         for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
-             pack_index < pack_count;
-             pack_index += BLOCK_SIZE) {
+             pack_index < pack_count; pack_index += BLOCK_SIZE) {
             // Load complete input and weight packs before
             // writing the output pack so out == in remains safe.
 

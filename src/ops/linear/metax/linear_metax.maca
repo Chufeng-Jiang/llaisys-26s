@@ -484,9 +484,7 @@ private:
 
         check_mcblas(
             mcblasLtMatmulDescSetAttribute(
-                plan.operation->get(),
-                MCBLASLT_MATMUL_DESC_BIAS_POINTER,
-                &bias_pointer,
+                plan.operation->get(), MCBLASLT_MATMUL_DESC_BIAS_POINTER, &bias_pointer,
                 sizeof(bias_pointer)),
             "mcblasLtMatmulDescSetAttribute(BIAS_POINTER)");
 
@@ -494,9 +492,7 @@ private:
 
         check_mcblas(
             mcblasLtMatmulDescSetAttribute(
-                plan.operation->get(),
-                MCBLASLT_MATMUL_DESC_BIAS_DATA_TYPE,
-                &bias_type,
+                plan.operation->get(), MCBLASLT_MATMUL_DESC_BIAS_DATA_TYPE, &bias_type,
                 sizeof(bias_type)),
             "mcblasLtMatmulDescSetAttribute(BIAS_DATA_TYPE)");
 
@@ -522,16 +518,9 @@ private:
         int returned_results = 0;
 
         const mcblasStatus_t heuristic_status = mcblasLtMatmulAlgoGetHeuristic(
-            _handle,
-            plan.operation->get(),
-            plan.weight_layout->get(),
-            plan.input_layout->get(),
-            plan.output_layout->get(),
-            plan.output_layout->get(),
-            plan.preference->get(),
-            1,
-            &heuristic,
-            &returned_results);
+            _handle, plan.operation->get(), plan.weight_layout->get(), plan.input_layout->get(),
+            plan.output_layout->get(), plan.output_layout->get(), plan.preference->get(), 1,
+            &heuristic, &returned_results);
 
         if (mcblas_status_not_supported(heuristic_status) || returned_results == 0
             || !mcblas_status_success(heuristic.state)) {
@@ -662,8 +651,7 @@ void launch_portable_linear(
         mcblasGemmEx(
             handle,
 
-            MCBLAS_OP_T,
-            MCBLAS_OP_N,
+            MCBLAS_OP_T, MCBLAS_OP_N,
 
             static_cast<int>(output_features),
 
@@ -673,22 +661,15 @@ void launch_portable_linear(
 
             &alpha,
 
-            weight,
-            data_type,
-            static_cast<int>(input_features),
+            weight, data_type, static_cast<int>(input_features),
 
-            in,
-            data_type,
-            static_cast<int>(input_features),
+            in, data_type, static_cast<int>(input_features),
 
             &beta,
 
-            out,
-            data_type,
-            static_cast<int>(output_features),
+            out, data_type, static_cast<int>(output_features),
 
-            MCBLAS_COMPUTE_32F,
-            MCBLAS_GEMM_DEFAULT),
+            MCBLAS_COMPUTE_32F, MCBLAS_GEMM_DEFAULT),
         "mcblasGemmEx");
 }
 
@@ -733,9 +714,7 @@ bool try_launch_fused_linear(
 
     check_mcblas(
         mcblasLtMatmulDescSetAttribute(
-            plan.operation->get(),
-            MCBLASLT_MATMUL_DESC_BIAS_POINTER,
-            &bias_pointer,
+            plan.operation->get(), MCBLASLT_MATMUL_DESC_BIAS_POINTER, &bias_pointer,
             sizeof(bias_pointer)),
         "mcblasLtMatmulDescSetAttribute(BIAS_POINTER)");
 
@@ -752,24 +731,19 @@ bool try_launch_fused_linear(
 
         &alpha,
 
-        weight,
-        plan.weight_layout->get(),
+        weight, plan.weight_layout->get(),
 
-        in,
-        plan.input_layout->get(),
+        in, plan.input_layout->get(),
 
         &beta,
 
-        out,
-        plan.output_layout->get(),
+        out, plan.output_layout->get(),
 
-        out,
-        plan.output_layout->get(),
+        out, plan.output_layout->get(),
 
         &plan.algo,
 
-        nullptr,
-        0,
+        nullptr, 0,
 
         stream);
 
@@ -844,15 +818,7 @@ void launch_metax_linear(
 
     if (should_try_fused) {
         const bool fused = try_launch_fused_linear(
-            out,
-            in,
-            weight,
-            bias,
-            type,
-            row_count,
-            output_features,
-            input_features,
-            device_id,
+            out, in, weight, bias, type, row_count, output_features, input_features, device_id,
             stream);
 
         if (fused) { return; }
@@ -897,16 +863,9 @@ void linear(
         using T = typename decltype(tag)::type;
 
         return launch_metax_linear<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const T *>(weight),
-            reinterpret_cast<const T *>(bias),
-            type,
-            nrow,
-            ncol_out,
-            ncol_in,
-            device_id,
-            mc_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight), reinterpret_cast<const T *>(bias), type, nrow,
+            ncol_out, ncol_in, device_id, mc_stream);
     });
 }
 

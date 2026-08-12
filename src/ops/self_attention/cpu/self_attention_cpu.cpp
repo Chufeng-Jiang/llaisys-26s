@@ -115,8 +115,7 @@ void process_attention_tile(
 
     std::fill(
         workspace.output.begin(),
-        workspace.output.begin() + static_cast<std::ptrdiff_t>(output_count),
-        0.0F);
+        workspace.output.begin() + static_cast<std::ptrdiff_t>(output_count), 0.0F);
 
     std::fill(
         workspace.maximum.begin(),
@@ -125,8 +124,7 @@ void process_attention_tile(
 
     std::fill(
         workspace.denominator.begin(),
-        workspace.denominator.begin() + static_cast<std::ptrdiff_t>(query_count),
-        0.0F);
+        workspace.denominator.begin() + static_cast<std::ptrdiff_t>(query_count), 0.0F);
 
     if constexpr (!std::is_same_v<T, float>) {
         workspace.query.resize(query_count * query_dimension);
@@ -292,26 +290,22 @@ void self_attention_impl(
     const std::size_t output_elements = checked_product(
         checked_product(
             sequence_length, head_count, "SelfAttention: output vector count overflows size_t."),
-        value_dimension,
-        "SelfAttention: output element count overflows size_t.");
+        value_dimension, "SelfAttention: output element count overflows size_t.");
 
     const std::size_t query_elements = checked_product(
         checked_product(
             sequence_length, head_count, "SelfAttention: query vector count overflows size_t."),
-        query_dimension,
-        "SelfAttention: query element count overflows size_t.");
+        query_dimension, "SelfAttention: query element count overflows size_t.");
 
     const std::size_t key_elements = checked_product(
         checked_product(
             total_length, kv_head_count, "SelfAttention: key vector count overflows size_t."),
-        query_dimension,
-        "SelfAttention: key element count overflows size_t.");
+        query_dimension, "SelfAttention: key element count overflows size_t.");
 
     const std::size_t value_elements = checked_product(
         checked_product(
             total_length, kv_head_count, "SelfAttention: value vector count overflows size_t."),
-        value_dimension,
-        "SelfAttention: value element count overflows size_t.");
+        value_dimension, "SelfAttention: value element count overflows size_t.");
 
     CHECK_ARGUMENT(
         output_elements == 0 || attn_val != nullptr,
@@ -364,22 +358,9 @@ void self_attention_impl(
                 = std::min(query_tile_size, sequence_length - query_start);
 
             process_attention_tile(
-                workspace,
-                attn_val,
-                q,
-                k,
-                v,
-                scale,
-                query_start,
-                query_count,
-                head,
-                sequence_length,
-                head_count,
-                value_dimension,
-                total_length,
-                kv_head_count,
-                query_dimension,
-                group_size);
+                workspace, attn_val, q, k, v, scale, query_start, query_count, head,
+                sequence_length, head_count, value_dimension, total_length, kv_head_count,
+                query_dimension, group_size);
         }
     }
 }
@@ -405,17 +386,9 @@ void self_attention(
         using T = typename decltype(tag)::type;
 
         return self_attention_impl<T>(
-            reinterpret_cast<T *>(attn_val),
-            reinterpret_cast<const T *>(q),
-            reinterpret_cast<const T *>(k),
-            reinterpret_cast<const T *>(v),
-            scale,
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d);
+            reinterpret_cast<T *>(attn_val), reinterpret_cast<const T *>(q),
+            reinterpret_cast<const T *>(k), reinterpret_cast<const T *>(v), scale, seqlen, nhead,
+            dv, total_len, nkvhead, d);
     });
 }
 

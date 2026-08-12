@@ -198,18 +198,12 @@ void rearrange_typed(
     const std::vector<std::size_t> &in_shape,
     const std::vector<std::ptrdiff_t> &in_strides) {
     validate_layout_common(
-        out_shape,
-        out_strides,
-        numel,
-        "Rearrange: output shape and stride counts must match.",
+        out_shape, out_strides, numel, "Rearrange: output shape and stride counts must match.",
         "Rearrange: output shape does not match numel.",
         "Rearrange: output shape element count overflows size_t.");
 
     validate_layout_common(
-        in_shape,
-        in_strides,
-        numel,
-        "Rearrange: input shape and stride counts must match.",
+        in_shape, in_strides, numel, "Rearrange: input shape and stride counts must match.",
         "Rearrange: input shape does not match numel.",
         "Rearrange: input shape element count overflows size_t.");
 
@@ -274,13 +268,8 @@ void rearrange(
         using T = typename decltype(tag)::type;
 
         return rearrange_typed<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            numel,
-            out_shape,
-            out_strides,
-            in_shape,
-            in_strides);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in), numel, out_shape,
+            out_strides, in_shape, in_strides);
     });
 }
 

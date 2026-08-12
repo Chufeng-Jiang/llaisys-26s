@@ -4,7 +4,7 @@
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../device/nvidia/nvidia_resource.cuh"
 #include "../../../utils.hpp"
-
+#include "../../cuda_compat/common.cuh"
 #include "../cuda_compat/linear_cuda_compat.cuh"
 
 #include <cublas_v2.h>
@@ -18,13 +18,9 @@ namespace {
 namespace cuda_compat = llaisys::ops::cuda_compat;
 
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
-
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
-
-using llaisys::device::nvidia::get_capped_grid_size;
-
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::to_cuda_stream;
-
 using llaisys::utils::checked_product;
 
 // ============================================================
@@ -88,13 +84,8 @@ void initialize_linear_output(
     // ========================================================
 
     cuda_compat::launch_linear_bias_broadcast<T>(
-        out,
-        bias,
-        output_elements,
-        output_features,
-        static_cast<unsigned int>(CUDA_BLOCK_SIZE),
-        grid_size,
-        stream);
+        out, bias, output_elements, output_features, static_cast<unsigned int>(CUDA_BLOCK_SIZE),
+        grid_size, stream);
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -249,8 +240,7 @@ void launch_nvidia_linear(
     CUBLAS_CHECK(cublasGemmEx(
         handle,
 
-        CUBLAS_OP_T,
-        CUBLAS_OP_N,
+        CUBLAS_OP_T, CUBLAS_OP_N,
 
         static_cast<int>(output_features),
 
@@ -260,22 +250,15 @@ void launch_nvidia_linear(
 
         &alpha,
 
-        weight,
-        data_type,
-        static_cast<int>(input_features),
+        weight, data_type, static_cast<int>(input_features),
 
-        in,
-        data_type,
-        static_cast<int>(input_features),
+        in, data_type, static_cast<int>(input_features),
 
         &beta,
 
-        out,
-        data_type,
-        static_cast<int>(output_features),
+        out, data_type, static_cast<int>(output_features),
 
-        CUBLAS_COMPUTE_32F,
-        CUBLAS_GEMM_DEFAULT));
+        CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
 }
 
 } // namespace
@@ -302,14 +285,9 @@ void linear(
         using T = typename decltype(tag)::type;
 
         return launch_nvidia_linear<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const T *>(weight),
-            reinterpret_cast<const T *>(bias),
-            nrow,
-            ncol_out,
-            ncol_in,
-            cuda_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight), reinterpret_cast<const T *>(bias), nrow, ncol_out,
+            ncol_in, cuda_stream);
     });
 }
 

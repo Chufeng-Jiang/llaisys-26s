@@ -1,10 +1,11 @@
 from . import libllaisys
 from .libllaisys import LIB_LLAISYS
-from ctypes import c_void_p
+from ctypes import byref, c_void_p
 
 
 class RuntimeAPI:
     def __init__(self, device_type: libllaisys.DeviceType):
+        self._device_type = device_type
         self._api = LIB_LLAISYS.llaisysGetRuntimeAPI(
             libllaisys.llaisysDeviceType_t(device_type)
         )
@@ -66,3 +67,20 @@ class RuntimeAPI:
         self._api.contents.memcpy_async(
             dst, src, size, libllaisys.llaisysMemcpyKind_t(kind), stream
         )
+
+    def get_context_stream(
+        self,
+        device_id: int = 0,
+    ) -> int:
+        stream = libllaisys.llaisysStream_t()
+
+        status = LIB_LLAISYS.llaisysGetContextStream(
+            libllaisys.llaisysDeviceType_t(self._device_type),
+            device_id,
+            byref(stream),
+        )
+
+        if status != 0:
+            raise RuntimeError("Failed to get LLAISYS context stream")
+
+        return 0 if stream.value is None else int(stream.value)

@@ -69,9 +69,8 @@ void launch_metax_rope(
         "RoPE: position-id pointer must not be null.");
 
     CHECK_ARGUMENT(
-        sequence_length == 0 || head_count > 0,
-        "RoPE: head count must be greater than zero "
-        "for a nonempty sequence.");
+        sequence_length == 0 || head_count > 0, "RoPE: head count must be greater than zero "
+                                                "for a nonempty sequence.");
 
     CHECK_ARGUMENT(dimension > 0, "RoPE: head dimension must be greater than zero.");
 
@@ -192,10 +191,9 @@ void launch_metax_rope(
             use_cached_kernel = auto_cached_kernel;
         } else {
             CHECK_ARGUMENT(
-                false,
-                "RoPE: invalid "
-                "LLAISYS_METAX_ROPE_CACHE value. "
-                "Expected direct, cached, or auto.");
+                false, "RoPE: invalid "
+                       "LLAISYS_METAX_ROPE_CACHE value. "
+                       "Expected direct, cached, or auto.");
         }
     }
 
@@ -206,17 +204,8 @@ void launch_metax_rope(
     // ========================================================
 
     cuda_compat::launch_rope_kernel<T>(
-        out,
-        in,
-        position_ids,
-        theta,
-        sequence_length,
-        head_count,
-        dimension,
-        block_size,
-        grid_size,
-        use_cached_kernel,
-        stream);
+        out, in, position_ids, theta, sequence_length, head_count, dimension, block_size, grid_size,
+        use_cached_kernel, stream);
 
     // ========================================================
     // MetaX-specific launch error checking
@@ -245,14 +234,8 @@ void rope(
         using T = typename decltype(tag)::type;
 
         return launch_metax_rope<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const std::int64_t *>(pos_ids),
-            theta,
-            seqlen,
-            nhead,
-            d,
-            mc_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const std::int64_t *>(pos_ids), theta, seqlen, nhead, d, mc_stream);
     });
 }
 

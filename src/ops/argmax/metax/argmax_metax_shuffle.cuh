@@ -78,9 +78,8 @@ template <unsigned int BLOCK_SIZE>
 __device__ __forceinline__ ArgmaxResult
 block_reduce_argmax_shuffle64(ArgmaxResult thread_result, ArgmaxResult *warp_results) {
     static_assert(
-        BLOCK_SIZE % METAX_ARGMAX_WARP_SIZE == 0,
-        "MetaX shuffle Argmax requires block size "
-        "to be a multiple of warpSize=64.");
+        BLOCK_SIZE % METAX_ARGMAX_WARP_SIZE == 0, "MetaX shuffle Argmax requires block size "
+                                                  "to be a multiple of warpSize=64.");
 
     constexpr unsigned int NUM_WARPS = BLOCK_SIZE / METAX_ARGMAX_WARP_SIZE;
 

@@ -11,10 +11,7 @@
 
 __C {
     llaisysTensor_t tensorCreate(
-        size_t *shape,
-        size_t ndim,
-        llaisysDataType_t dtype,
-        llaisysDeviceType_t device_type,
+        size_t *shape, size_t ndim, llaisysDataType_t dtype, llaisysDeviceType_t device_type,
         int device_id) {
         return llaisys::c_api::guard_result<llaisysTensor_t>(
             [&]() {

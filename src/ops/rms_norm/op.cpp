@@ -118,13 +118,7 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
         auto &runtime = core::context().runtime();
 
         return nvidia::rms_norm(
-            out->data(),
-            in->data(),
-            weight->data(),
-            eps,
-            out->dtype(),
-            row_count,
-            column_count,
+            out->data(), in->data(), weight->data(), eps, out->dtype(), row_count, column_count,
             runtime.stream());
     }
 #endif
@@ -136,13 +130,7 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
         auto &runtime = core::context().runtime();
 
         return metax::rms_norm(
-            out->data(),
-            in->data(),
-            weight->data(),
-            eps,
-            out->dtype(),
-            row_count,
-            column_count,
+            out->data(), in->data(), weight->data(), eps, out->dtype(), row_count, column_count,
             runtime.stream());
     }
 #endif

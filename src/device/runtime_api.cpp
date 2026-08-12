@@ -47,18 +47,10 @@ void unsupportedMemcpyAsync(
 }
 
 const LlaisysRuntimeAPI UNSUPPORTED_RUNTIME_API = {
-    &unsupportedGetDeviceCount,
-    &unsupportedSetDevice,
-    &unsupportedDeviceSynchronize,
-    &unsupportedCreateStream,
-    &unsupportedDestroyStream,
-    &unsupportedStreamSynchronize,
-    &unsupportedMallocDevice,
-    &unsupportedFreeDevice,
-    &unsupportedMallocHost,
-    &unsupportedFreeHost,
-    &unsupportedMemcpySync,
-    &unsupportedMemcpyAsync,
+    &unsupportedGetDeviceCount, &unsupportedSetDevice,     &unsupportedDeviceSynchronize,
+    &unsupportedCreateStream,   &unsupportedDestroyStream, &unsupportedStreamSynchronize,
+    &unsupportedMallocDevice,   &unsupportedFreeDevice,    &unsupportedMallocHost,
+    &unsupportedFreeHost,       &unsupportedMemcpySync,    &unsupportedMemcpyAsync,
 };
 
 } // namespace

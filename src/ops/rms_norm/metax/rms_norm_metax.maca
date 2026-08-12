@@ -246,8 +246,7 @@ __global__ void rms_norm_cub_kernel(
         const T *row_input = in + row_offset;
 
         for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
-             pack_index < packs_per_row;
-             pack_index += BLOCK_SIZE) {
+             pack_index < packs_per_row; pack_index += BLOCK_SIZE) {
             const std::size_t element_offset = pack_index * ELEMENTS_PER_PACK;
 
             const uint4 packed = load_cub_packed_128(row_input + element_offset);
@@ -320,8 +319,7 @@ __global__ void rms_norm_cub_kernel(
         T *row_output = out + row_offset;
 
         for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
-             pack_index < packs_per_row;
-             pack_index += BLOCK_SIZE) {
+             pack_index < packs_per_row; pack_index += BLOCK_SIZE) {
             const std::size_t element_offset = pack_index * ELEMENTS_PER_PACK;
 
             // -----------------------------------------------
@@ -488,19 +486,16 @@ void launch_metax_rms_norm(
     // --------------------------------------------------------
 
     CHECK_ARGUMENT(
-        nrow == 0 || out != nullptr,
-        "RMSNorm: output pointer "
-        "must not be null.");
+        nrow == 0 || out != nullptr, "RMSNorm: output pointer "
+                                     "must not be null.");
 
     CHECK_ARGUMENT(
-        nrow == 0 || in != nullptr,
-        "RMSNorm: input pointer "
-        "must not be null.");
+        nrow == 0 || in != nullptr, "RMSNorm: input pointer "
+                                    "must not be null.");
 
     CHECK_ARGUMENT(
-        nrow == 0 || weight != nullptr,
-        "RMSNorm: weight pointer "
-        "must not be null.");
+        nrow == 0 || weight != nullptr, "RMSNorm: weight pointer "
+                                        "must not be null.");
 
     if (nrow == 0) { return; }
 
@@ -509,23 +504,20 @@ void launch_metax_rms_norm(
     // --------------------------------------------------------
 
     CHECK_ARGUMENT(
-        ncol > 0,
-        "RMSNorm: row width must be "
-        "greater than zero.");
+        ncol > 0, "RMSNorm: row width must be "
+                  "greater than zero.");
 
     CHECK_ARGUMENT(
-        ncol <= std::numeric_limits<std::size_t>::max() / nrow,
-        "RMSNorm: tensor element count "
-        "overflows size_t.");
+        ncol <= std::numeric_limits<std::size_t>::max() / nrow, "RMSNorm: tensor element count "
+                                                                "overflows size_t.");
 
     // --------------------------------------------------------
     // Epsilon validation
     // --------------------------------------------------------
 
     CHECK_ARGUMENT(
-        std::isfinite(eps) && eps >= 0.0F,
-        "RMSNorm: epsilon must be "
-        "finite and nonnegative.");
+        std::isfinite(eps) && eps >= 0.0F, "RMSNorm: epsilon must be "
+                                           "finite and nonnegative.");
 
     // --------------------------------------------------------
     // Grid validation
@@ -588,12 +580,8 @@ void launch_metax_rms_norm(
             "eligible=%s "
             "force_scalar=%s "
             "packed=%s\n",
-            nrow,
-            ncol,
-            block_size,
-            get_metax_rms_norm_reduction_name(reduction),
-            packed_eligible ? "true" : "false",
-            force_scalar ? "true" : "false",
+            nrow, ncol, block_size, get_metax_rms_norm_reduction_name(reduction),
+            packed_eligible ? "true" : "false", force_scalar ? "true" : "false",
             use_packed_kernel ? "true" : "false");
     }
 
@@ -643,13 +631,8 @@ void rms_norm(
         using T = typename decltype(tag)::type;
 
         return launch_metax_rms_norm<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const T *>(weight),
-            eps,
-            nrow,
-            ncol,
-            mc_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight), eps, nrow, ncol, mc_stream);
     });
 }
 

@@ -83,15 +83,8 @@ std::int64_t LlaisysQwen2Model::infer(const std::int64_t *token_ids, std::size_t
             = workspace->get(output_slot, {sequence_length, meta.hs}, meta.dtype);
 
         qwen2_layer_forward(
-            *this,
-            layer,
-            layer_weights,
-            hidden_states,
-            prepared.position_ids,
-            sequence_length,
-            previous_cache_length,
-            total_length,
-            next_hidden_states);
+            *this, layer, layer_weights, hidden_states, prepared.position_ids, sequence_length,
+            previous_cache_length, total_length, next_hidden_states);
 
         hidden_states = std::move(next_hidden_states);
     }

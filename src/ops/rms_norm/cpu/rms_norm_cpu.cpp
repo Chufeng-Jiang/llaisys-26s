@@ -187,12 +187,8 @@ void rms_norm(
         using T = typename decltype(tag)::type;
 
         return rms_norm_impl<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const T *>(weight),
-            eps,
-            nrow,
-            ncol);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight), eps, nrow, ncol);
     });
 }
 

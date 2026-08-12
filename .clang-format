@@ -5,8 +5,10 @@ AccessModifierOffset: -4
 
 ColumnLimit: 100
 
+Cpp11BracedListStyle: FunctionCall
+
 PackArguments:
-  BinPack: OnePerLine
+  BinPack: BinPack
 
 PackParameters:
   BinPack: OnePerLine

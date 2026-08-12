@@ -80,10 +80,8 @@ void swiglu(
         using T = typename decltype(tag)::type;
 
         return swiglu_impl<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(gate),
-            reinterpret_cast<const T *>(up),
-            numel);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(gate),
+            reinterpret_cast<const T *>(up), numel);
     });
 }
 

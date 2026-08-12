@@ -156,10 +156,8 @@ void argmax(
         using T = typename decltype(tag)::type;
 
         return argmax_impl<T>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<T *>(max_val),
-            reinterpret_cast<const T *>(vals),
-            numel);
+            reinterpret_cast<std::int64_t *>(max_idx), reinterpret_cast<T *>(max_val),
+            reinterpret_cast<const T *>(vals), numel);
     });
 }
 

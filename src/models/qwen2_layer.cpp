@@ -14,13 +14,7 @@ void qwen2_layer_forward(
     std::size_t total_length,
     const llaisys::tensor_t &output_hidden) {
     auto attention_residual = qwen2_attention_forward(
-        model,
-        layer,
-        weights,
-        hidden_states,
-        position_ids,
-        sequence_length,
-        previous_cache_length,
+        model, layer, weights, hidden_states, position_ids, sequence_length, previous_cache_length,
         total_length);
 
     qwen2_mlp_forward(model, weights, attention_residual, sequence_length, output_hidden);

@@ -385,9 +385,8 @@ public:
         CHECK_ARGUMENT(device_id >= 0, "Argmax: invalid MetaX device id.");
 
         CHECK_ARGUMENT(
-            required_count > 0,
-            "Argmax: workspace count "
-            "must be greater than zero.");
+            required_count > 0, "Argmax: workspace count "
+                                "must be greater than zero.");
 
         // ----------------------------------------------------
         // Device changed.
@@ -574,16 +573,14 @@ void launch_metax_argmax_multiblock(
 
     if (merge == MetaXArgmaxMerge::ATOMIC) {
         CHECK_ARGUMENT(
-            reduction == MetaXArgmaxReduction::SHUFFLE,
-            "Argmax: MetaX atomic merge currently "
-            "requires reduction=shuffle.");
+            reduction == MetaXArgmaxReduction::SHUFFLE, "Argmax: MetaX atomic merge currently "
+                                                        "requires reduction=shuffle.");
 
         unsigned long long *packed_workspace = METAX_ARGMAX_ATOMIC_WORKSPACE.get(device_id);
 
         CHECK_ARGUMENT(
-            packed_workspace != nullptr,
-            "Argmax: MetaX packed atomic workspace "
-            "must not be null.");
+            packed_workspace != nullptr, "Argmax: MetaX packed atomic workspace "
+                                         "must not be null.");
 
         return metax_detail::launch_argmax_multiblock_shuffle_atomic<T>(
             max_idx, max_val, vals, numel, packed_workspace, block_size, grid_size, stream);
@@ -597,9 +594,8 @@ void launch_metax_argmax_multiblock(
         = METAX_ARGMAX_WORKSPACE.get(device_id, static_cast<std::size_t>(grid_size));
 
     CHECK_ARGUMENT(
-        partial_results != nullptr,
-        "Argmax: MetaX partial-result "
-        "workspace must not be null.");
+        partial_results != nullptr, "Argmax: MetaX partial-result "
+                                    "workspace must not be null.");
 
     if (reduction == MetaXArgmaxReduction::TREE) {
         return metax_detail::launch_argmax_multiblock_tree<T>(
@@ -655,10 +651,7 @@ void launch_metax_argmax(
                 "block=%u "
                 "reduction=n/a "
                 "merge=n/a\n",
-                metax_argmax_impl_name(configured_impl),
-                numel,
-                threshold,
-                block_size);
+                metax_argmax_impl_name(configured_impl), numel, threshold, block_size);
         } else {
             const unsigned int grid_size = get_metax_argmax_grid_size(numel, block_size);
 
@@ -673,13 +666,8 @@ void launch_metax_argmax(
                 "grid=%u "
                 "reduction=%s "
                 "merge=%s\n",
-                metax_argmax_impl_name(configured_impl),
-                numel,
-                threshold,
-                block_size,
-                grid_size,
-                metax_argmax_reduction_name(reduction),
-                metax_argmax_merge_name(merge));
+                metax_argmax_impl_name(configured_impl), numel, threshold, block_size, grid_size,
+                metax_argmax_reduction_name(reduction), metax_argmax_merge_name(merge));
         }
     }
 
@@ -716,24 +704,20 @@ void argmax(
     int device_id,
     llaisysStream_t stream) {
     CHECK_ARGUMENT(
-        max_idx != nullptr,
-        "Argmax: max_idx pointer "
-        "must not be null.");
+        max_idx != nullptr, "Argmax: max_idx pointer "
+                            "must not be null.");
 
     CHECK_ARGUMENT(
-        max_val != nullptr,
-        "Argmax: max_val pointer "
-        "must not be null.");
+        max_val != nullptr, "Argmax: max_val pointer "
+                            "must not be null.");
 
     CHECK_ARGUMENT(
-        vals != nullptr,
-        "Argmax: vals pointer "
-        "must not be null.");
+        vals != nullptr, "Argmax: vals pointer "
+                         "must not be null.");
 
     CHECK_ARGUMENT(
-        numel > 0,
-        "Argmax: input tensor "
-        "must not be empty.");
+        numel > 0, "Argmax: input tensor "
+                   "must not be empty.");
 
     CHECK_ARGUMENT(
         numel <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()),
@@ -741,9 +725,8 @@ void argmax(
         "supports at most UINT32_MAX elements.");
 
     CHECK_ARGUMENT(
-        device_id >= 0,
-        "Argmax: MetaX device id "
-        "must be non-negative.");
+        device_id >= 0, "Argmax: MetaX device id "
+                        "must be non-negative.");
 
     const mcStream_t mc_stream = reinterpret_cast<mcStream_t>(stream);
 
@@ -751,12 +734,8 @@ void argmax(
         using T = typename decltype(tag)::type;
 
         return launch_metax_argmax<T>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<T *>(max_val),
-            reinterpret_cast<const T *>(vals),
-            numel,
-            device_id,
-            mc_stream);
+            reinterpret_cast<std::int64_t *>(max_idx), reinterpret_cast<T *>(max_val),
+            reinterpret_cast<const T *>(vals), numel, device_id, mc_stream);
     });
 }
 

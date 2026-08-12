@@ -138,21 +138,8 @@ void launch_metax_cuda_compat_baseline(
     // ========================================================
 
     cuda_compat::launch_self_attention_portable<T>(
-        attn_val,
-        q,
-        k,
-        v,
-        scale,
-        seqlen,
-        nhead,
-        dv,
-        total_len,
-        nkvhead,
-        d,
-        METAX_SELF_ATTENTION_BLOCK_SIZE,
-        grid_size,
-        shared_memory_bytes,
-        stream);
+        attn_val, q, k, v, scale, seqlen, nhead, dv, total_len, nkvhead, d,
+        METAX_SELF_ATTENTION_BLOCK_SIZE, grid_size, shared_memory_bytes, stream);
 
     MC_CHECK(mcGetLastError());
 }
@@ -208,24 +195,20 @@ void self_attention(
     // ========================================================
 
     const std::size_t output_elements = checked_product(
-        checked_product(seqlen, nhead, "SelfAttention: output vector count overflows size_t."),
-        dv,
+        checked_product(seqlen, nhead, "SelfAttention: output vector count overflows size_t."), dv,
         "SelfAttention: output element count overflows size_t.");
 
     const std::size_t query_elements = checked_product(
-        checked_product(seqlen, nhead, "SelfAttention: query vector count overflows size_t."),
-        d,
+        checked_product(seqlen, nhead, "SelfAttention: query vector count overflows size_t."), d,
         "SelfAttention: query element count overflows size_t.");
 
     const std::size_t key_elements = checked_product(
-        checked_product(total_len, nkvhead, "SelfAttention: key vector count overflows size_t."),
-        d,
+        checked_product(total_len, nkvhead, "SelfAttention: key vector count overflows size_t."), d,
         "SelfAttention: key element count overflows size_t.");
 
     const std::size_t value_elements = checked_product(
         checked_product(total_len, nkvhead, "SelfAttention: value vector count overflows size_t."),
-        dv,
-        "SelfAttention: value element count overflows size_t.");
+        dv, "SelfAttention: value element count overflows size_t.");
 
     CHECK_ARGUMENT(
         output_elements == 0 || attn_val != nullptr,
@@ -252,18 +235,9 @@ void self_attention(
         using T = typename decltype(tag)::type;
 
         return launch_metax_cuda_compat_baseline<T>(
-            reinterpret_cast<T *>(attn_val),
-            reinterpret_cast<const T *>(q),
-            reinterpret_cast<const T *>(k),
-            reinterpret_cast<const T *>(v),
-            scale,
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
-            mc_stream);
+            reinterpret_cast<T *>(attn_val), reinterpret_cast<const T *>(q),
+            reinterpret_cast<const T *>(k), reinterpret_cast<const T *>(v), scale, seqlen, nhead,
+            dv, total_len, nkvhead, d, mc_stream);
     });
 }
 

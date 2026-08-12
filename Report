@@ -1,30 +1,10 @@
-# LLAISYS Implementation Report
+# LLAISYS 项目报告
 
-## Overview
+ ## 1. 项目总览
 
-The required LLAISYS implementation has been completed, including:
+LLAISYS（llaisys-26s）是一个多后端张量运算框架，面向 InfinniTensor 推理加速场景。其核心设计思想是将运算符的数学语义与硬件后端解耦：每种运算符在 src/ops/<operator>/ 目录下拥有一份公共接口（op.cpp），随后为不同硬件平台分别实现 NVIDIA CUDA 后端、MetaX（MetaCube）后端、CPU 后端以及一个名为 cuda_compat 的共享 CUDA 兼容层。这种四层结构（公共接口 → cuda_compat 算法层 → 特定厂商后端 → 特定芯片优化）使得算子的正确性逻辑被提取到可复用的 cuda_compat 层中，而每个厂商 adapter 只需负责调度、维度校验、cuBLAS/cuDNN 调用和启动参数决策，从而在保证性能的同时最大化代码复用。
 
-* CPU backend
-* NVIDIA CUDA backend
-* MetaX backend
-* Required operators:
-
-  * add
-  * argmax
-  * embedding
-  * linear
-  * rms_norm
-  * rope
-  * self_attention
-  * swiglu
-* FP32 / FP16 / BF16 support where applicable
-* Qwen2 / DeepSeek-R1-Distill-Qwen-1.5B inference
-* KV Cache
-* Python bindings and device selection
-
-The implementation has been reproduced on CPU, NVIDIA GPU, and MetaX GPU.
-
-## Supported Platforms
+### 1.1 平台信息
 
 | Platform     | Tested Hardware / Environment                                                          | Status      |
 | ------------ | -------------------------------------------------------------------------------------- | ----------- |
@@ -32,35 +12,7 @@ The implementation has been reproduced on CPU, NVIDIA GPU, and MetaX GPU.
 | NVIDIA CUDA  | NVIDIA GeForce RTX 3080 Ti Laptop GPU, 16 GB VRAM, Driver 596.08, CUDA Driver API 13.2 | ✅ Supported |
 | MetaX / MACA | MetaX C500, 64 GB physical GPU memory, MACA 3.2.1.10, Driver 3.8.30                    | ✅ Supported |
 
-### Platform Details
-
-* **CPU**
-
-  * Processor: 12th Gen Intel Core i7-12700H
-  * Architecture: x86_64
-  * Tested under WSL/Linux
-  * Runtime, operator tests, and end-to-end inference passed.
-
-* **NVIDIA**
-
-  * GPU: NVIDIA GeForce RTX 3080 Ti Laptop GPU
-  * GPU Memory: 16 GB
-  * NVIDIA Driver: 596.08
-  * CUDA version reported by `nvidia-smi`: 13.2
-  * Runtime, operator tests, and end-to-end inference passed.
-
-* **MetaX**
-
-  * GPU: MetaX C500
-  * Physical GPU Memory: 64 GB
-  * Tested sGPU quota: 16 GB
-  * MACA Version: 3.2.1.10
-  * Kernel Mode Driver: 3.8.30
-  * MX-SMI Version: 2.2.9
-  * Runtime, operator tests, and end-to-end inference passed.
-
-
-## Platform Results
+## 1.2 平台结果
 
 | Platform     | Runtime | Operators | End-to-End Inference | Status    |
 | ------------ | ------- | --------- | -------------------- | --------- |
@@ -68,6 +20,7 @@ The implementation has been reproduced on CPU, NVIDIA GPU, and MetaX GPU.
 | NVIDIA CUDA  | ✅       | ✅         | ✅                    | Passed |
 | MetaX / MACA | ✅       | ✅         | ✅                    | Passed |
 
+## 1.3 复现细节
 Test model:
 
 ```text
@@ -76,7 +29,7 @@ deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
 
 ---
 
-## CPU / NVIDIA Reproduction
+### 1.3.1 CPU / NVIDIA 复现
 
 ### Build
 
@@ -144,7 +97,7 @@ python test/test_infer.py \
 
 ---
 
-## MetaX Reproduction
+## 1.3.2 MetaX 复现
 
 ### Build
 
@@ -192,15 +145,126 @@ python test/test_infer.py \
     --max_steps 70
 ```
 
----
+## 2. 抽象模型架构
 
-## Reproduction Results
+每个算子目录下遵循统一的三层布局。
 
-All listed runtime tests, operator tests, and end-to-end inference tests were successfully reproduced on their corresponding platforms.
+第一层是 op.cpp，它接收 LLAISYS 公共 ABI（std::byte 指针、llaisysDataType_t、llaisysStream_t）并通过 dispatch_cuda_dtype 模板函数将类型擦除的字节指针转换回具体的 C++ 类型 T，然后转发到后端命名空间函数。
 
-| Test                 | CPU | NVIDIA | MetaX |
-| -------------------- | --- | ------ | ----- |
-| Runtime              | ✅   | ✅      | ✅     |
-| Operators            | ✅   | ✅      | ✅     |
-| End-to-End Inference | ✅   | ✅      | ✅     |
+第二层是 cuda_compat 目录下的 *.cuh 文件，这些文件包含可跨 NVIDIA 和 MetaX 编译的纯 CUDA 内核和启动函数，内部不使用 vendor 专有原语（如 __shfl_down_sync 或 atomic），而依赖 common.cuh 中定义的统一类型别名（fp16_t、bf16_t）、对齐检查、Packed128 打包结构和块内归约等可移植原语。
 
+第三层是 nvidia 或 metax 目录下的 *.cu / *.maca 文件，它们调用 cuda_compat 的算法接口，但补充厂商特定的调度策略（如 NVIDIA 的动态共享内存 opt-in、MetaX 的 MACA 运行时调用），并在 linear 和 self_attention 中插入 cuBLAS 和 cuDNN 加速路径。CPU 后端完全独立实现于 src/ops/<operator>/cpu/ 目录，使用标准 C++ 循环和 Eigen 等库完成计算，不依赖任何 CUDA 设施。
+
+
+## 3. 设备通用基础设施
+
+src/device/nvidia/nvidia_common.cuh 与 nvidia_resource.cu 构成 NVIDIA 后端的设备级基础设施。
+
+- nvidia_common.cuh 定义了执行常量（CUDA_WARP_SIZE=32、CUDA_BLOCK_SIZE=256、CUDA_MAX_THREADS_PER_BLOCK=1024、CUDA_DEFAULT_MAX_GRID_SIZE=4096）以及 get_warp_aligned_block_size 这样的 block 尺寸选择器，它将工作量向上舍入到 warp 边界并钳制到 [warp_size, block_size] 区间。
+
+- nvidia_resource.cu 实现了一个基于 thread_local 哈希表的 cuBLAS 句柄池：每个宿主机线程、每个 CUDA 设备都缓存一个 cublasHandle_t，构造时调用 cublasCreate 并设置 CUBLAS_POINTER_MODE_HOST 与 CUBLAS_DEFAULT_MATH，查询时通过 cublasSetStream 绑定到当前流。此外还缓存每个设备的 cudaDeviceProp，用于在 kernel 启动前查询 sharedMemPerBlockOptin，以决定是否需要通过 cudaFuncSetAttribute 启用动态共享内存。
+
+- nvidia_dtype.cuh 提供 dispatch_cuda_dtype 模板，它将 llaisysDataType_t 枚举映射到具体的 CUDA 类型标签（float、half、__nv_bfloat16）并调用用户提供的泛型 lambda，从而避免在每个算子中重复编写类型分发逻辑。
+
+
+## 4. 算子
+
+### 4.1 cuda_compat 共享层
+
+src/ops/cuda_compat/common.cuh 是整个 cuda_compat 层的基础设施。它通过条件编译选择 NVIDIA 头文件（cuda_bf16.h、cuda_fp16.h）或 MetaX 头文件（common/maca_bfloat16.h、common/maca_fp16.h），并定义统一的类型别名 fp16_t、bf16_t、fp16x2_t、bf16x2_t，确保后续代码无需条件编译即可编译到两个平台。它还提供了编译时 ABI 静态断言（验证类型大小）、div_ceil 向上取整、get_capped_grid_size 网格尺寸钳制、to_float/from_float 类型转换模板、is_aligned/are_aligned 地址对齐检查、Packed128（uint4）128 位打包结构及 PACKED_128_ELEMENTS 模板常量。这个 common.cuh 文件被每个运算符的 cuda_compat/<operator>_cuda_compat.cuh 包含，构成了所有非 vendor 专有 kernel 的算法基础。
+
+
+
+### 4.2 Linear 算子
+
+-  NVIDIA 后端（src/ops/linear/nvidia/linear_nvidia.cu）将 GEMM 外包给 cuBLAS，使用 cublasGemmEx 完成核心运算。由于 LLAISYS 采用行优先存储而 cuBLAS 按列优先解释内存，该后端通过转置参数 CUBLAS_OP_T + CUBLAS_OP_N 将行优先的 X[K,M]、W[K,N]、Y[N,M] 映射到 cuBLAS 的列优先 GEMM，无需任何内存拷贝或转置。cuBLAS 句柄通过 get_cublas_handle 获取（带流绑定），计算精度使用 CUBLAS_COMPUTE_32F 保证 FP32 累积，数据类型通过 CudaTypeTraits<T> 映射到 CUDA_R_32F / CUDA_R_16F / CUDA_R_16BF。对于偏置处理，该后端采用一个巧妙的两段式策略：当 bias 非空时，首先调用 cuda_compat 层的 launch_linear_bias_broadcast 将 bias 广播到输出矩阵的每一行，使得 Y 初始值为 bias，然后 GEMM 使用 beta=1.0F 进行累加（Y = XW^T + 1 * Y）；当 bias 为空时，直接使用 beta=0.0F 跳过初始化，cuBLAS 直接覆盖输出。这种设计避免了在 cuBLAS 之外额外实现 bias 广播 kernel，同时利用 cuBLAS 的高效 GEMM。cuda_compat 层的 linear_cuda_compat.cuh 仅提供 bias 广播 kernel（linear_broadcast_bias_kernel），GEMM 本身完全委托给 vendor BLAS。
+
+- MetaX 后端（src/ops/linear/metax/linear_metax.hpp + .maca）声明了类似的 thin wrapper，.maca 文件中实现了完整的 MACA 内核，包括 mc_runtime 版本的 GEMM 或 cuBLAS 兼容调用。
+
+- CPU 后端（src/ops/linear/cpu/linear_cpu.cpp）使用 Eigen 的矩阵乘法或手动循环实现，FP16/BF16 输入上溯到 FP32 进行累加。
+
+优化总结：cuBLAS cublasGemmEx 提供硬件加速的 GEMM；行优先到列优先的零拷贝转置映射；beta=0/1 动态选择机制避免冗余初始化；128 位打包广播 kernel 最小化偏置初始化开销。
+
+### 4.3 RMS Norm 算子
+
+- NVIDIA 后端（src/ops/rms_norm/nvidia/rms_norm_nvidia.cu）实现了一个三档 block-size 自适应调度策略：行宽不超过 64（即 SMALL_BLOCK_SIZE = WARP_SIZE * 2）时使用 64 线程，行宽不超过 512（MEDIUM_BLOCK_MAX_COLUMNS）时使用 128 线程，更宽的行使用全 256 线程。该后端默认使用 CUB 优化的 rms_norm_nvidia_cub.cuh，其中 cub::BlockReduce<float, BLOCK_SIZE> 替代了手写的 shared-memory 归约，显著减少了同步开销和 bank conflict。在 CUB 核函数 rms_norm_cub_scalar_kernel 中，每个线程以 block-stride 步长遍历其所属行的元素，累加平方和使用 fmaf 进行融合乘加以提高数值精度，随后由 CUB 的 BlockReduce::Sum 完成跨线程的归约；线程 0 计算 inverse_rms = 1 / sqrt(mean_square + eps)，然后所有线程以 block-stride 再次遍历行，对每个元素执行 out = in * weight * inverse_rms 的融合计算，避免了单独的归一化 pass。CUB 还提供了 packed kernel 变体 rms_norm_cub_packed_kernel，它使用 Packed128（即 uint4，16 字节）对输入和权重进行 128 位宽的打包加载，从而将内存事务减少 4 倍（float）或 8 倍（fp16/bf16），同时保持 FP32 累积以保证数值稳定性。cuda_compat 层提供了对应的 rms_norm_cuda_compat.cuh，它实现了完全可移植的 block_reduce_sum（仅依赖 __syncthreads，不使用 warp shuffle 或 CUB），但不包含 CUB 优化路径，从而作为无法启用 CUB 的构建环境下的退化选项。
+
+- MetaX 后端（src/ops/rms_norm/metax/rms_norm_metax.hpp + .maca）通过 rms_norm_metax.hpp 声明的 thin wrapper 调用 nvidia_backend 或直接实现 MACA 专有内核；.maca 文件中包含了 MetaX 芯片的完整内核实现，包括使用 mc_runtime API 的 shared-memory 归约和打包加载。此外还存在一个名为 rms_norm_nvrtc.cuh 的 NVRTC JIT 编译路径，仅 225 字符，作为动态编译的最小占位实现。
+
+优化总结：CUB 加速的块内归约替换了手写归约；128 位打包内存访问减少全局内存事务；FP32 累积保持数值稳定性；动态共享内存 opt-in 支持超出默认限制的行宽；三挡 block-size 自适应调优适应不同输入规模。
+
+### 4.4 Self-Attention 算子
+
+
+- NVIDIA 后端（src/ops/self_attention/nvidia/self_attention_nvidia.cu）实现了一个三层降级机制。
+    - 首选路径是 cuDNN Frontend SDPA（Scaled Dot-Product Attention）：当构建宏 LLAISYS_HAS_CUDNN_SDPA 启用且运行时满足条件（cuDNN + cuDNN Frontend 头文件可用，CUDA 运行时 >= 12.0，GPU 计算能力 >= 8.0，数据类型为 FP16 或 BF16，head 维度 d 和 value 维度 dv 均为 8 的倍数且不超过 128 或 256）时，构建一个 cuDNN graph，其中 Q、K、V、O 张量使用自定义 stride 直接映射到 LLAISYS 的连续 [S, H, D] 内存布局，避免转置开销。cuDNN graph 使用 LRU 缓存（CudnnGraphCache，最大 8 个条目）和拒绝缓存（RejectedCudnnGraphCache，最大 64 个条目），拒绝缓存确保无法支持的形状不会重复尝试 cuDNN 构建，从而避免显式错误处理开销。
+    - 构建失败或不满足条件时，回退到 NVIDIA 自有的 fused CUDA kernel（self_attention_fallback_kernel），该 kernel 使用 shared memory 缓存完整的 Q 向量，warp 间通过 __shfl_down_sync 完成局部点积的归约，采用在线 softmax（online softmax）技术：维护 running_max、running_sum 和 old_scale/tile_scale 状态，每次处理 TILE_KV=128 个 key 的 tile，通过指数调整因子将之前的累积结果与当前 tile 融合，避免材料化完整的注意力矩阵，从而将内存复杂度从 O(seqlen²) 降低到 O(TILE_KV)。
+
+    - 此外还支持 GQA（Grouped-Query Attention）和 MQA（Multi-Query Attention）通过 nkvhead 参数。cuda_compat 层的 self_attention_cuda_compat.cuh 提供了一个完全可移植的 baseline kernel，它移除了所有 warp shuffle、cuDNN 依赖和 warp 尺寸假设，使用 block_reduce_sum 的 portable 归约（仅依赖 __syncthreads）。NVIDIA 调度器通过 LLAISYS_NVIDIA_SELF_ATTENTION_USE_CUDA_COMPAT 宏选择使用 cuDNN+fused kernel 或 portable baseline。
+
+- MetaX 后端（src/ops/self_attention/metax/self_attention_metax.hpp + .maca）实现了 MACA 专有的内核。
+
+- CPU 后端（src/ops/self_attention/cpu/self_attention_cpu.cpp）使用手动循环或 BLAS 库完成 QK^T 计算。
+
+优化总结：cuDNN SDPA 提供 vendor 级优化的 attention；TILE_KV=128  tiled attention 降低内存复杂度；在线 softmax 避免材料化注意力矩阵；warp shuffle 归约减少同步开销；shared memory 缓存 Q 向量；GQA/MQA 支持；cuDNN graph + rejected 双缓存机制平衡性能与错误处理开销。
+
+
+### 4.5 ArgMax 算子
+
+- NVIDIA 后端（src/ops/argmax/nvidia/argmax_nvidia.cu）默认使用 argmax_nvidia_optimized.cuh 中的优化实现。该优化 kernel 使用 warp shuffle 归约：每个 warp 独立找到局部最大值及其索引，通过 __shfl_down_sync 在 warp 内完成归约，然后 warp 0 聚合所有 warp 结果并写入 shared memory，最后 block 0 完成最终归约。这种分层归约（warp → block）最大程度利用了 shuffle 指令的低延迟特性，避免了 shared-memory bank conflict。cuda_compat 层的 argmax_cuda_compat.cuh 提供了一个完全可移植的 baseline，使用 block_reduce_argmax_portable（仅依赖 __syncthreads，不使用 warp shuffle 或 atomicCAS），并支持非幂_of_2 的 block 尺寸。
+
+- MetaX 后端（src/ops/argmax/metax/argmax_metax.hpp + .maca）实现了三种不同的归约策略，分别位于独立的头文件中：argmax_metax_shuffle.cuh 使用 warp shuffle（对应 NVIDIA 的优化路径）、argmax_metax_atomic.cuh 使用 atomicCAS 在全局内存上完成归约，适用于大规模输入；argmax_metax_multiblock.cuh 使用多块协作完成归约，适用于超大输入。.maca 文件根据输入大小动态选择最优策略。
+
+- CPU 后端（src/ops/argmax/cpu/argmax_cpu.cpp）使用 std::max_element 完成归约。
+
+优化总结：warp shuffle 归约最小化同步开销；分层 warp-to-block 归约利用 shuffle 低延迟特性；MetaX 三策略自适应（shuffle/atomic/multi-block）适应不同输入规模；portable baseline 不依赖 vendor 专有原语。
+
+
+### 4.6 RoPE 算子
+
+
+- NVIDIA 后端（src/ops/rope/nvidia/rope_nvidia.cu）实现了两个 kernel 路径的选择。当 head_count > 1 且 half_dimension <= 2048（NVIDIA_MAX_CACHED_HALF_DIMENSION）时，使用 cached kernel：将每个 token 位置的 cosine/sine 值缓存到动态 shared memory 中（shared-memory 大小为 2 * half_dimension * sizeof(float)），所有 head 共享同一组三角函数值，避免重复计算 powf 和 sincosf。当 head_count == 1 或 half_dimension > 2048 时，使用 direct kernel：每个线程负责一个或多个 dimension pair，计算一次 angle 后在所有 head 间循环重用。cuda_compat 层的 rope_cuda_compat.cuh 同样提供 cached 和 direct 两个 kernel，算法完全可移植。NVIDIA 调度器通过 get_warp_aligned_block_size 选择 block 尺寸（将 max(half_dimension, pair_count) 向上舍入到 warp 边界），并通过 get_capped_grid_size 限制 grid 尺寸。
+
+- MetaX 后端（src/ops/rope/metax/rope_metax.hpp + .maca）实现 MACA 专有内核，使用 mc_runtime API 完成 shared-memory 缓存。
+
+- CPU 后端（src/ops/rope/cpu/rope_cpu.cpp）使用预计算的三角函数表或动态计算。
+
+优化总结：shared-memory 缓存三角函数值消除重复计算；动态 shared-memory 容量自动扩展；cached/direct 双路径自适应；block 尺寸 warp 对齐优化。
+
+
+### 4.7 Embedding 算子
+
+- NVIDIA 后端（src/ops/embedding/nvidia/embedding_nvidia.cu）实现了 scalar 和 vectorized 两个 kernel。Vectorized kernel 使用 Packed128（uint4，16 字节）进行一次性 128 位宽的内存加载/存储，每个 block 处理一个 output row，通过 block-stride 循环处理更多个 row。Scalar kernel 则逐元素加载，作为 fallback。cuda_compat 层的 embedding_cuda_compat.cuh 实现了两个 kernel：embedding_scalar_kernel（每个 block 一个 row，grid-stride 循环）和 embedding_vectorized_kernel（128 位打包传输）。向量化路径的适用性检查 can_use_vectorized_embedding 要求三个条件：out 和 weight 都 16 字节对齐；每个 row 的字节数是 16 的倍数（保证后续 row 也对齐）。
+
+- MetaX 后端（src/ops/embedding/metax/embedding_metax.hpp + .maca）实现 MACA 专有内核。
+
+- CPU 后端（src/ops/embedding/cpu/embedding_cpu.cpp）使用直接内存拷贝。
+
+优化总结：128 位打包传输将内存事务减少 4 倍（FP32）或 8 倍（FP16/BF16）；对齐检查确保向量化安全；无效索引跳过保证边界安全。
+
+
+### 4.8 Add 算子
+
+
+- NVIDIA 后端（src/ops/add/nvidia/add_nvidia.cu）实现了 scalar 和 vectorized 两个 kernel。Vectorized kernel 使用数据类型特定的向量类型（float4 对应 FP32，fp16x2_t * 4 对 对应 FP16，bf16x2_t * 4 对 对应 BF16）进行 128 位宽的加载-运算-存储，利用 __hadd2 完成 4 对 fp16/bf16 元素的并行加法。Scalar kernel 则逐元素使用 __hadd（fp16/bf16）或直接加法（float）。cuda_compat 层的 add_cuda_compat.cuh 定义了 VectorTraits 模板（float → float4，fp16_t → fp16x2_t，bf16_t → bf16x2_t），以及 can_use_vectorized_add 检查（要求 16 字节对齐且 numel >= vector_size）、get_add_work_items 计算逻辑工作量和 launch_add_kernel 统一启动器。
+
+- MetaX 后端（src/ops/add/metax/add_metax.hpp + .maca）实现 MACA 专有内核。
+
+- CPU 后端（src/ops/add/cpu/add_cpu.cpp）使用手动循环或 std::transform。优化总结：128 位向量化访存结合类型专化的 packed add 指令（__hadd2）；scalar tail 保证末尾元素处理；对齐检查确保向量化安全。
+
+
+### 4.9 SwiGLU 算子
+
+NVIDIA 后端（src/ops/swiglu/nvidia/swiglu_nvidia.cu）调用 cuda_compat 层的 launch_swiglu_kernel，支持 scalar 和 packed 两个 kernel。SwiGLU 计算公式为 out = up * gate / (1 + exp(-gate))，该实现故意使用标准 expf（而非 __expf）以保持与 CPU 后端的位级数值一致性。Packed kernel 使用 Packed128 进行 128 位打包加载，每个线程处理 4 个 FP32 或 8 个 FP16/BF16 元素，#pragma unroll 展开内部循环，计算过程中所有中间结果在 FP32 下进行以保证数值精度。Scalar kernel 用于处理未对齐或数量不足一个 pack 的情况。cuda_compat 层的 swiglu_cuda_compat.cuh 实现了 swiglu_value（标量 SwiGLU 计算）、swiglu_element（类型转换 + 计算）、swiglu_scalar_kernel、swiglu_packed_kernel 以及 can_use_packed_swiglu 检测。
+
+- MetaX 后端（src/ops/swiglu/metax/swiglu_metax.hpp + .maca）实现 MACA 专有内核。
+
+- CPU 后端（src/ops/swiglu/cpu/swiglu_cpu.cpp）使用循环实现。
+
+优化总结：128 位打包访存；#pragma unroll 循环展开；FP32 累积保证数值稳定性；scalar tail 保证边界正确性；expf 而非 __expf 保持跨后端一致性。
+
+
+## 5. 其他
+### 5.1 MetaX 后端架构
+
+MetaX 后端位于 src/device/metax/ 和 src/ops/*/metax/。metax_common.hpp 与 metax_dtype.hpp 提供与 NVIDIA 对应物类似的设备常量和类型映射。每个算子的 metax/<operator>_metax.hpp 声明一个 thin wrapper，随后 .maca 文件提供完整实现。关键设计是 .maca 文件与 cuda_compat 的 .cuh 文件共享相同的算法接口：MetaX 后端在调度层面（block/grid 尺寸、shared-memory 配置、MCAC HK 调用）与 NVIDIA 有所不同，但核心算法（归约、在线 softmax、RoPE 旋转等）通过 cuda_compat 层复用。ArgMax 在 MetaX 上特别值得注意：它实现了 shuffle/atomic/multi-block 三种归约策略，对应不同的输入规模阈值，.maca 文件负责运行时选择。cuBLAS 在 MetaX 后端同样用于 Linear 的 GEMM，NVIDIA 的 cublasGemmEx 通过 MACA 运行时 API 透明支持。cuDNN SDPA 在 MetaX 后端的使用取决于平台是否提供 cudnn_frontend，若不可用则自动回退到 fused CUDA kernel。

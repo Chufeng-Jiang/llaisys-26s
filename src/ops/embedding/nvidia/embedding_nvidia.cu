@@ -57,9 +57,8 @@ void launch_nvidia_embedding(
     CHECK_ARGUMENT(embedding_length > 0, "Embedding: embedding length must be greater than zero.");
 
     CHECK_ARGUMENT(
-        numel % embedding_length == 0,
-        "Embedding: output element count must be divisible by "
-        "embedding length.");
+        numel % embedding_length == 0, "Embedding: output element count must be divisible by "
+                                       "embedding length.");
 
     CHECK_ARGUMENT(numel == 0 || out != nullptr, "Embedding: output pointer must not be null.");
 
@@ -112,16 +111,8 @@ void launch_nvidia_embedding(
     // ========================================================
 
     cuda_compat::launch_embedding_kernel<T>(
-        out,
-        index,
-        weight,
-        index_count,
-        embedding_length,
-        vocabulary_size,
-        block_size,
-        grid_size,
-        use_vectorized_kernel,
-        stream);
+        out, index, weight, index_count, embedding_length, vocabulary_size, block_size, grid_size,
+        use_vectorized_kernel, stream);
 
     // ========================================================
     // NVIDIA-specific launch error handling
@@ -153,13 +144,8 @@ void embedding(
         using T = typename decltype(tag)::type;
 
         return launch_nvidia_embedding<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const std::int64_t *>(index),
-            reinterpret_cast<const T *>(weight),
-            numel,
-            len,
-            vocabulary_size,
-            cuda_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const std::int64_t *>(index),
+            reinterpret_cast<const T *>(weight), numel, len, vocabulary_size, cuda_stream);
     });
 }
 

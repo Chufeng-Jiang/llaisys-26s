@@ -215,13 +215,8 @@ void rope(
         using T = typename decltype(tag)::type;
 
         return rope_impl<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const std::int64_t *>(pos_ids),
-            theta,
-            seqlen,
-            nhead,
-            d);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const std::int64_t *>(pos_ids), theta, seqlen, nhead, d);
     });
 }
 

@@ -39,9 +39,8 @@ void embedding_impl(
     CHECK_ARGUMENT(len > 0, "Embedding: embedding length must be greater than zero.");
 
     CHECK_ARGUMENT(
-        numel % len == 0,
-        "Embedding: output element count must be divisible by embedding "
-        "length.");
+        numel % len == 0, "Embedding: output element count must be divisible by embedding "
+                          "length.");
 
     CHECK_ARGUMENT(numel == 0 || out != nullptr, "Embedding: output pointer must not be null.");
 
@@ -113,12 +112,8 @@ void embedding(
         using T = typename decltype(tag)::type;
 
         return embedding_impl<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const std::int64_t *>(index),
-            reinterpret_cast<const T *>(weight),
-            numel,
-            len,
-            vocabulary_size);
+            reinterpret_cast<T *>(out), reinterpret_cast<const std::int64_t *>(index),
+            reinterpret_cast<const T *>(weight), numel, len, vocabulary_size);
     });
 }
 

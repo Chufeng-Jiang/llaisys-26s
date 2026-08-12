@@ -38,13 +38,7 @@ void launch_metax_swiglu(T *out, const T *gate, const T *up, std::size_t numel, 
     // ========================================================
 
     cuda_compat::launch_swiglu_kernel<T>(
-        out,
-        gate,
-        up,
-        numel,
-        static_cast<unsigned int>(block_size),
-        grid_size,
-        use_packed_kernel,
+        out, gate, up, numel, static_cast<unsigned int>(block_size), grid_size, use_packed_kernel,
         stream);
 
     // ========================================================
@@ -77,11 +71,8 @@ void swiglu(
         using T = typename decltype(tag)::type;
 
         return launch_metax_swiglu<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(gate),
-            reinterpret_cast<const T *>(up),
-            numel,
-            mc_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(gate),
+            reinterpret_cast<const T *>(up), numel, mc_stream);
     });
 }
 

@@ -164,13 +164,8 @@ void linear_impl(
         }
 
         linear_float(
-            output_float.data(),
-            input_float.data(),
-            weight_float.data(),
-            bias_pointer,
-            row_count,
-            output_features,
-            input_features);
+            output_float.data(), input_float.data(), weight_float.data(), bias_pointer, row_count,
+            output_features, input_features);
 
         convert_from_float(out, output_float.data(), output_elements);
     }
@@ -193,12 +188,8 @@ void linear(
         using T = typename decltype(tag)::type;
 
         return linear_impl<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const T *>(weight),
-            reinterpret_cast<const T *>(bias),
-            nrow,
-            ncol_out,
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const T *>(weight), reinterpret_cast<const T *>(bias), nrow, ncol_out,
             ncol_in);
     });
 }

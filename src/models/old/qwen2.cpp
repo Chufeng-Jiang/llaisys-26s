@@ -558,10 +558,8 @@ std::int64_t LlaisysQwen2Model::infer(const std::int64_t *token_ids, std::size_t
     auto normalized_last_hidden = create_tensor(*this, {1, hidden_size}, dtype);
 
     llaisys::ops::rms_norm(
-        normalized_last_hidden,
-        last_hidden,
-        require_tensor(weights.out_norm_w, "model.norm.weight"),
-        meta.epsilon);
+        normalized_last_hidden, last_hidden,
+        require_tensor(weights.out_norm_w, "model.norm.weight"), meta.epsilon);
 
     /*
      * LM head
@@ -570,9 +568,7 @@ std::int64_t LlaisysQwen2Model::infer(const std::int64_t *token_ids, std::size_t
     auto logits_2d = create_tensor(*this, {1, vocabulary_size}, dtype);
 
     llaisys::ops::linear(
-        logits_2d,
-        normalized_last_hidden,
-        require_tensor(weights.out_embed, "lm_head.weight"),
+        logits_2d, normalized_last_hidden, require_tensor(weights.out_embed, "lm_head.weight"),
         nullptr);
 
     auto logits = logits_2d->view({vocabulary_size});

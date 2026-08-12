@@ -108,8 +108,7 @@ __global__ void embedding_vectorized_kernel(
         const auto *const packed_weight = reinterpret_cast<const Packed128 *>(weight_row_pointer);
 
         for (std::size_t pack_index = static_cast<std::size_t>(threadIdx.x);
-             pack_index < packs_per_row;
-             pack_index += static_cast<std::size_t>(blockDim.x)) {
+             pack_index < packs_per_row; pack_index += static_cast<std::size_t>(blockDim.x)) {
             packed_output[pack_index] = packed_weight[pack_index];
         }
     }

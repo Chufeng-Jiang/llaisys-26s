@@ -46,13 +46,7 @@ void rearrange(tensor_t out, tensor_t in) {
     switch (out->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::rearrange(
-            out->data(),
-            in->data(),
-            out->dtype(),
-            numel,
-            out->shape(),
-            out->strides(),
-            in->shape(),
+            out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
             in->strides());
 
 #ifdef ENABLE_NVIDIA_API
@@ -62,15 +56,8 @@ void rearrange(tensor_t out, tensor_t in) {
         auto &runtime = core::context().runtime();
 
         return nvidia::rearrange(
-            out->data(),
-            in->data(),
-            out->dtype(),
-            numel,
-            out->shape(),
-            out->strides(),
-            in->shape(),
-            in->strides(),
-            runtime.stream());
+            out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
+            in->strides(), runtime.stream());
     }
 #endif
 
@@ -81,15 +68,8 @@ void rearrange(tensor_t out, tensor_t in) {
         auto &runtime = core::context().runtime();
 
         return metax::rearrange(
-            out->data(),
-            in->data(),
-            out->dtype(),
-            numel,
-            out->shape(),
-            out->strides(),
-            in->shape(),
-            in->strides(),
-            runtime.stream());
+            out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
+            in->strides(), runtime.stream());
     }
 #endif
 

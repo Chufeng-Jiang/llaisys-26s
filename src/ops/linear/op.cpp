@@ -89,14 +89,8 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     switch (out->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::linear(
-            out->data(),
-            in->data(),
-            weight->data(),
-            bias == nullptr ? nullptr : bias->data(),
-            out->dtype(),
-            row_count,
-            output_features,
-            input_features);
+            out->data(), in->data(), weight->data(), bias == nullptr ? nullptr : bias->data(),
+            out->dtype(), row_count, output_features, input_features);
 
 #ifdef ENABLE_NVIDIA_API
 
@@ -106,15 +100,8 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
         auto &runtime = core::context().runtime();
 
         return nvidia::linear(
-            out->data(),
-            in->data(),
-            weight->data(),
-            bias == nullptr ? nullptr : bias->data(),
-            out->dtype(),
-            row_count,
-            output_features,
-            input_features,
-            runtime.stream());
+            out->data(), in->data(), weight->data(), bias == nullptr ? nullptr : bias->data(),
+            out->dtype(), row_count, output_features, input_features, runtime.stream());
     }
 
 #endif
@@ -127,15 +114,8 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
         auto &runtime = core::context().runtime();
 
         return metax::linear(
-            out->data(),
-            in->data(),
-            weight->data(),
-            bias == nullptr ? nullptr : bias->data(),
-            out->dtype(),
-            row_count,
-            output_features,
-            input_features,
-            out->deviceId(),
+            out->data(), in->data(), weight->data(), bias == nullptr ? nullptr : bias->data(),
+            out->dtype(), row_count, output_features, input_features, out->deviceId(),
             runtime.stream());
     }
 

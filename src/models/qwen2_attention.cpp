@@ -73,8 +73,7 @@ llaisys::tensor_t qwen2_attention_forward(
     auto value_3d = value_2d->view({sequence_length, kv_heads, head_dimension});
 
     auto rotated_query = workspace.get(
-        Qwen2WorkspaceSlot::RotatedQuery,
-        {sequence_length, attention_heads, head_dimension},
+        Qwen2WorkspaceSlot::RotatedQuery, {sequence_length, attention_heads, head_dimension},
         dtype);
 
     auto rotated_key = workspace.get(
@@ -99,8 +98,7 @@ llaisys::tensor_t qwen2_attention_forward(
     auto value_history = model.value_cache[layer]->slice(0, 0, total_length);
 
     auto attention_output_3d = workspace.get(
-        Qwen2WorkspaceSlot::AttentionOutput,
-        {sequence_length, attention_heads, head_dimension},
+        Qwen2WorkspaceSlot::AttentionOutput, {sequence_length, attention_heads, head_dimension},
         dtype);
 
     const float attention_scale = 1.0F / std::sqrt(static_cast<float>(head_dimension));

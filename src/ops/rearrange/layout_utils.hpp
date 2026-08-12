@@ -90,8 +90,7 @@ inline bool is_non_overlapping_layout(
     }
 
     std::sort(
-        dimensions.begin(),
-        dimensions.end(),
+        dimensions.begin(), dimensions.end(),
         [](const DimensionInfo &left, const DimensionInfo &right) {
             return left.stride < right.stride;
         });

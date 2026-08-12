@@ -3,7 +3,7 @@
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
-
+#include "../../cuda_compat/common.cuh"
 #include "../cuda_compat/rope_cuda_compat.cuh"
 
 #include <algorithm>
@@ -14,15 +14,10 @@
 namespace {
 
 namespace cuda_compat = llaisys::ops::cuda_compat;
-
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
-
-using llaisys::device::nvidia::get_capped_grid_size;
-
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
-
 using llaisys::device::nvidia::to_cuda_stream;
-
 using llaisys::utils::checked_product;
 
 // ============================================================
@@ -124,17 +119,8 @@ void launch_nvidia_rope(
     // ========================================================
 
     cuda_compat::launch_rope_kernel<T>(
-        out,
-        in,
-        position_ids,
-        theta,
-        sequence_length,
-        head_count,
-        dimension,
-        block_size,
-        grid_size,
-        use_cached_kernel,
-        stream);
+        out, in, position_ids, theta, sequence_length, head_count, dimension, block_size, grid_size,
+        use_cached_kernel, stream);
 
     // ========================================================
     // NVIDIA-specific launch error handling
@@ -167,14 +153,8 @@ void rope(
         using T = typename decltype(tag)::type;
 
         return launch_nvidia_rope<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(in),
-            reinterpret_cast<const std::int64_t *>(pos_ids),
-            theta,
-            seqlen,
-            nhead,
-            d,
-            cuda_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in),
+            reinterpret_cast<const std::int64_t *>(pos_ids), theta, seqlen, nhead, d, cuda_stream);
     });
 }
 

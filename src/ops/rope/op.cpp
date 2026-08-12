@@ -103,14 +103,8 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     switch (out->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::rope(
-            out->data(),
-            in->data(),
-            pos_ids->data(),
-            theta,
-            out->dtype(),
-            sequence_length,
-            head_count,
-            head_dimension);
+            out->data(), in->data(), pos_ids->data(), theta, out->dtype(), sequence_length,
+            head_count, head_dimension);
 
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA: {
@@ -120,15 +114,8 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
         auto &runtime = core::context().runtime();
 
         return nvidia::rope(
-            out->data(),
-            in->data(),
-            pos_ids->data(),
-            theta,
-            out->dtype(),
-            sequence_length,
-            head_count,
-            head_dimension,
-            runtime.stream());
+            out->data(), in->data(), pos_ids->data(), theta, out->dtype(), sequence_length,
+            head_count, head_dimension, runtime.stream());
     }
 #endif
 
@@ -139,15 +126,8 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
         auto &runtime = core::context().runtime();
 
         return metax::rope(
-            out->data(),
-            in->data(),
-            pos_ids->data(),
-            theta,
-            out->dtype(),
-            sequence_length,
-            head_count,
-            head_dimension,
-            runtime.stream());
+            out->data(), in->data(), pos_ids->data(), theta, out->dtype(), sequence_length,
+            head_count, head_dimension, runtime.stream());
     }
 #endif
 

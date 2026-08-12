@@ -75,9 +75,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
     // The current query tokens are assumed to be located at the end
     // of the KV cache.
     CHECK_ARGUMENT(
-        total_len >= seqlen,
-        "SelfAttention: total KV length must not be smaller than query "
-        "sequence length.");
+        total_len >= seqlen, "SelfAttention: total KV length must not be smaller than query "
+                             "sequence length.");
 
     // GQA/MQA requires every KV head to serve an equal number
     // of query heads.
@@ -115,9 +114,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         "SelfAttention: output head count must match query head count.");
 
     CHECK_ARGUMENT(
-        attn_val->shape()[2] == dv,
-        "SelfAttention: output head dimension must match value head "
-        "dimension.");
+        attn_val->shape()[2] == dv, "SelfAttention: output head dimension must match value head "
+                                    "dimension.");
 
     // ============================================================
     // Scale checks
@@ -206,18 +204,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
     switch (attn_val->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::self_attention(
-            attn_val->data(),
-            q->data(),
-            k->data(),
-            v->data(),
-            scale,
-            attn_val->dtype(),
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d);
+            attn_val->data(), q->data(), k->data(), v->data(), scale, attn_val->dtype(), seqlen,
+            nhead, dv, total_len, nkvhead, d);
 
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA: {
@@ -228,19 +216,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         auto &runtime = core::context().runtime();
 
         return nvidia::self_attention(
-            attn_val->data(),
-            q->data(),
-            k->data(),
-            v->data(),
-            scale,
-            attn_val->dtype(),
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
-            runtime.stream());
+            attn_val->data(), q->data(), k->data(), v->data(), scale, attn_val->dtype(), seqlen,
+            nhead, dv, total_len, nkvhead, d, runtime.stream());
     }
 #endif
 
@@ -253,19 +230,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         auto &runtime = core::context().runtime();
 
         return metax::self_attention(
-            attn_val->data(),
-            q->data(),
-            k->data(),
-            v->data(),
-            scale,
-            attn_val->dtype(),
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
-            runtime.stream());
+            attn_val->data(), q->data(), k->data(), v->data(), scale, attn_val->dtype(), seqlen,
+            nhead, dv, total_len, nkvhead, d, runtime.stream());
     }
 #endif
 

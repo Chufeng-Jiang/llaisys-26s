@@ -62,15 +62,6 @@ inline unsigned int get_warp_aligned_block_size(std::size_t work_items) {
     return static_cast<unsigned int>(block_size);
 }
 
-inline std::size_t get_capped_grid_size(
-    std::size_t work_items,
-    std::size_t block_size,
-    std::size_t max_grid_size = CUDA_DEFAULT_MAX_GRID_SIZE) {
-    const std::size_t required_blocks = div_ceil(work_items, block_size);
-
-    return required_blocks < max_grid_size ? required_blocks : max_grid_size;
-}
-
 // ============================================================
 // CUDA data-type conversion
 // ============================================================

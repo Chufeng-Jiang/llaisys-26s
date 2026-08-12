@@ -270,8 +270,7 @@ __global__ void rearrange_contiguous_tail_kernel(
     DeviceLayout out_layout,
     DeviceLayout in_layout) {
     for (std::size_t outer_block = static_cast<std::size_t>(blockIdx.x);
-         outer_block < outer_block_count;
-         outer_block += static_cast<std::size_t>(gridDim.x)) {
+         outer_block < outer_block_count; outer_block += static_cast<std::size_t>(gridDim.x)) {
         const std::ptrdiff_t out_offset
             = logical_offset(outer_block, out_layout, outer_dimension_count);
 
@@ -369,12 +368,7 @@ void launch_contiguous_tail_copy(
 
     rearrange_contiguous_tail_kernel<T>
         <<<static_cast<unsigned int>(grid_size), METAX_REARRANGE_BLOCK_SIZE, 0, stream>>>(
-            out,
-            in,
-            outer_block_count,
-            tail.element_count,
-            tail.start_dimension,
-            out_layout,
+            out, in, outer_block_count, tail.element_count, tail.start_dimension, out_layout,
             in_layout);
 
     MC_CHECK(mcGetLastError());
@@ -424,19 +418,13 @@ void rearrange_typed(
     const std::vector<std::ptrdiff_t> &in_strides,
     mcStream_t stream) {
     validate_layout(
-        out_shape,
-        out_strides,
-        numel,
-        "Rearrange: output shape and stride counts must match.",
+        out_shape, out_strides, numel, "Rearrange: output shape and stride counts must match.",
         "Rearrange: output rank exceeds the MetaX metadata limit.",
         "Rearrange: output shape does not match numel.",
         "Rearrange: output shape element count overflows size_t.");
 
     validate_layout(
-        in_shape,
-        in_strides,
-        numel,
-        "Rearrange: input shape and stride counts must match.",
+        in_shape, in_strides, numel, "Rearrange: input shape and stride counts must match.",
         "Rearrange: input rank exceeds the MetaX metadata limit.",
         "Rearrange: input shape does not match numel.",
         "Rearrange: input shape element count overflows size_t.");
@@ -549,26 +537,14 @@ void rearrange(
     switch (type) {
     case LLAISYS_DTYPE_F32:
         return rearrange_typed<std::uint32_t>(
-            reinterpret_cast<std::uint32_t *>(out),
-            reinterpret_cast<const std::uint32_t *>(in),
-            numel,
-            out_shape,
-            out_strides,
-            in_shape,
-            in_strides,
-            mc_stream);
+            reinterpret_cast<std::uint32_t *>(out), reinterpret_cast<const std::uint32_t *>(in),
+            numel, out_shape, out_strides, in_shape, in_strides, mc_stream);
 
     case LLAISYS_DTYPE_F16:
     case LLAISYS_DTYPE_BF16:
         return rearrange_typed<std::uint16_t>(
-            reinterpret_cast<std::uint16_t *>(out),
-            reinterpret_cast<const std::uint16_t *>(in),
-            numel,
-            out_shape,
-            out_strides,
-            in_shape,
-            in_strides,
-            mc_stream);
+            reinterpret_cast<std::uint16_t *>(out), reinterpret_cast<const std::uint16_t *>(in),
+            numel, out_shape, out_strides, in_shape, in_strides, mc_stream);
 
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);

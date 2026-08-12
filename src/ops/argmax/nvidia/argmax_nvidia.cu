@@ -4,7 +4,7 @@
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../device/nvidia/nvidia_resource.cuh"
 #include "../../../utils.hpp"
-
+#include "../../cuda_compat/common.cuh"
 #include "../cuda_compat/argmax_cuda_compat.cuh"
 #include "argmax_nvidia_optimized.cuh"
 
@@ -130,12 +130,8 @@ void argmax(
         using T = typename decltype(tag)::type;
 
         return launch_nvidia_argmax<T>(
-            reinterpret_cast<std::int64_t *>(max_idx),
-            reinterpret_cast<T *>(max_val),
-            reinterpret_cast<const T *>(vals),
-            numel,
-            resource,
-            cuda_stream);
+            reinterpret_cast<std::int64_t *>(max_idx), reinterpret_cast<T *>(max_val),
+            reinterpret_cast<const T *>(vals), numel, resource, cuda_stream);
     });
 }
 

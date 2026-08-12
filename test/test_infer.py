@@ -12,7 +12,6 @@ from huggingface_hub import snapshot_download
 from test_utils import *
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
 sys.stdout = io.TextIOWrapper(
     sys.stdout.buffer,
     encoding="utf-8",

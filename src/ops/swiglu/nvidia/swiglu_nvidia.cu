@@ -3,7 +3,7 @@
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../utils.hpp"
-
+#include "../../cuda_compat/common.cuh"
 #include "../cuda_compat/swiglu_cuda_compat.cuh"
 
 #include <cuda_runtime.h>
@@ -14,7 +14,7 @@ namespace {
 
 namespace cuda_compat = llaisys::ops::cuda_compat;
 
-using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_cuda_stream;
 
@@ -57,8 +57,10 @@ void launch_nvidia_swiglu(
 
     const unsigned int block_size = get_warp_aligned_block_size(work_items);
 
-    const std::size_t grid_size
-        = get_capped_grid_size(work_items, static_cast<std::size_t>(block_size));
+const std::size_t grid_size = get_capped_grid_size(
+    work_items,
+    static_cast<std::size_t>(block_size),
+    llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
 
     // ========================================================
     // Shared CUDA-compatible implementation
@@ -103,11 +105,8 @@ void swiglu(
         using T = typename decltype(tag)::type;
 
         return launch_nvidia_swiglu<T>(
-            reinterpret_cast<T *>(out),
-            reinterpret_cast<const T *>(gate),
-            reinterpret_cast<const T *>(up),
-            numel,
-            cuda_stream);
+            reinterpret_cast<T *>(out), reinterpret_cast<const T *>(gate),
+            reinterpret_cast<const T *>(up), numel, cuda_stream);
     });
 }
 

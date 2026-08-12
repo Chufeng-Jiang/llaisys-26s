@@ -36,20 +36,14 @@ class LlaisysQwen2Weights(Structure):
         ("in_embed", llaisysTensor_t),
         ("out_embed", llaisysTensor_t),
         ("out_norm_w", llaisysTensor_t),
-
         ("attn_norm_w", POINTER(llaisysTensor_t)),
-
         ("attn_q_w", POINTER(llaisysTensor_t)),
         ("attn_q_b", POINTER(llaisysTensor_t)),
-
         ("attn_k_w", POINTER(llaisysTensor_t)),
         ("attn_k_b", POINTER(llaisysTensor_t)),
-
         ("attn_v_w", POINTER(llaisysTensor_t)),
         ("attn_v_b", POINTER(llaisysTensor_t)),
-
         ("attn_o_w", POINTER(llaisysTensor_t)),
-
         ("mlp_norm_w", POINTER(llaisysTensor_t)),
         ("mlp_gate_w", POINTER(llaisysTensor_t)),
         ("mlp_up_w", POINTER(llaisysTensor_t)),
@@ -61,9 +55,7 @@ class LlaisysQwen2Model(Structure):
     pass
 
 
-llaisysQwen2Model_t = POINTER(
-    LlaisysQwen2Model
-)
+llaisysQwen2Model_t = POINTER(LlaisysQwen2Model)
 
 
 def load_qwen2(lib):
@@ -74,9 +66,7 @@ def load_qwen2(lib):
         c_int,
     ]
 
-    lib.llaisysQwen2ModelCreate.restype = (
-        llaisysQwen2Model_t
-    )
+    lib.llaisysQwen2ModelCreate.restype = llaisysQwen2Model_t
 
     lib.llaisysQwen2ModelDestroy.argtypes = [
         llaisysQwen2Model_t,
@@ -88,9 +78,7 @@ def load_qwen2(lib):
         llaisysQwen2Model_t,
     ]
 
-    lib.llaisysQwen2ModelWeights.restype = (
-        POINTER(LlaisysQwen2Weights)
-    )
+    lib.llaisysQwen2ModelWeights.restype = POINTER(LlaisysQwen2Weights)
 
     lib.llaisysQwen2ModelReset.argtypes = [
         llaisysQwen2Model_t,

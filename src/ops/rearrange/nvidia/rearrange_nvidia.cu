@@ -3,6 +3,7 @@
 #include "../../../device/nvidia/nvidia_common.cuh"
 #include "../../../utils.hpp"
 #include "../layout_utils.hpp"
+#include "../../cuda_compat/common.cuh"
 
 #include <algorithm>
 #include <cstddef>
@@ -15,7 +16,7 @@ namespace {
 
 using llaisys::device::nvidia::are_aligned;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
-using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::Packed128;
 using llaisys::device::nvidia::PACKED_128_ALIGNMENT;
@@ -247,8 +248,7 @@ __global__ void rearrange_contiguous_tail_kernel(
     DeviceLayout out_layout,
     DeviceLayout in_layout) {
     for (std::size_t outer_block = static_cast<std::size_t>(blockIdx.x);
-         outer_block < outer_block_count;
-         outer_block += static_cast<std::size_t>(gridDim.x)) {
+         outer_block < outer_block_count; outer_block += static_cast<std::size_t>(gridDim.x)) {
         const std::ptrdiff_t out_offset
             = logical_offset(outer_block, out_layout, outer_dimension_count);
 
@@ -273,8 +273,7 @@ __global__ void rearrange_contiguous_tail_packed_kernel(
     DeviceLayout out_layout,
     DeviceLayout in_layout) {
     for (std::size_t outer_block = static_cast<std::size_t>(blockIdx.x);
-         outer_block < outer_block_count;
-         outer_block += static_cast<std::size_t>(gridDim.x)) {
+         outer_block < outer_block_count; outer_block += static_cast<std::size_t>(gridDim.x)) {
         const std::ptrdiff_t out_offset
             = logical_offset(outer_block, out_layout, outer_dimension_count);
 
@@ -378,24 +377,14 @@ void launch_contiguous_tail_copy(
 
         rearrange_contiguous_tail_packed_kernel<T>
             <<<static_cast<unsigned int>(grid_size), block_size, 0, stream>>>(
-                out,
-                in,
-                outer_block_count,
-                packs_per_outer_block,
-                tail.start_dimension,
-                out_layout,
+                out, in, outer_block_count, packs_per_outer_block, tail.start_dimension, out_layout,
                 in_layout);
     } else {
         const unsigned int block_size = get_warp_aligned_block_size(tail.element_count);
 
         rearrange_contiguous_tail_kernel<T>
             <<<static_cast<unsigned int>(grid_size), block_size, 0, stream>>>(
-                out,
-                in,
-                outer_block_count,
-                tail.element_count,
-                tail.start_dimension,
-                out_layout,
+                out, in, outer_block_count, tail.element_count, tail.start_dimension, out_layout,
                 in_layout);
     }
 
@@ -443,19 +432,13 @@ void rearrange_typed(
     const std::vector<std::ptrdiff_t> &in_strides,
     cudaStream_t stream) {
     validate_layout(
-        out_shape,
-        out_strides,
-        numel,
-        "Rearrange: output shape and stride counts must match.",
+        out_shape, out_strides, numel, "Rearrange: output shape and stride counts must match.",
         "Rearrange: output rank exceeds the CUDA metadata limit.",
         "Rearrange: output shape does not match numel.",
         "Rearrange: output shape element count overflows size_t.");
 
     validate_layout(
-        in_shape,
-        in_strides,
-        numel,
-        "Rearrange: input shape and stride counts must match.",
+        in_shape, in_strides, numel, "Rearrange: input shape and stride counts must match.",
         "Rearrange: input rank exceeds the CUDA metadata limit.",
         "Rearrange: input shape does not match numel.",
         "Rearrange: input shape element count overflows size_t.");
@@ -530,15 +513,7 @@ void rearrange_typed(
 
         if (tail.element_count > 1) {
             return launch_contiguous_tail_copy(
-                out,
-                in,
-                out_layout,
-                in_layout,
-                out_shape,
-                out_strides,
-                in_strides,
-                numel,
-                tail,
+                out, in, out_layout, in_layout, out_shape, out_strides, in_strides, numel, tail,
                 stream);
         }
     }
@@ -576,26 +551,14 @@ void rearrange(
     switch (type) {
     case LLAISYS_DTYPE_F32:
         return rearrange_typed<std::uint32_t>(
-            reinterpret_cast<std::uint32_t *>(out),
-            reinterpret_cast<const std::uint32_t *>(in),
-            numel,
-            out_shape,
-            out_strides,
-            in_shape,
-            in_strides,
-            cuda_stream);
+            reinterpret_cast<std::uint32_t *>(out), reinterpret_cast<const std::uint32_t *>(in),
+            numel, out_shape, out_strides, in_shape, in_strides, cuda_stream);
 
     case LLAISYS_DTYPE_F16:
     case LLAISYS_DTYPE_BF16:
         return rearrange_typed<std::uint16_t>(
-            reinterpret_cast<std::uint16_t *>(out),
-            reinterpret_cast<const std::uint16_t *>(in),
-            numel,
-            out_shape,
-            out_strides,
-            in_shape,
-            in_strides,
-            cuda_stream);
+            reinterpret_cast<std::uint16_t *>(out), reinterpret_cast<const std::uint16_t *>(in),
+            numel, out_shape, out_strides, in_shape, in_strides, cuda_stream);
 
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(type);

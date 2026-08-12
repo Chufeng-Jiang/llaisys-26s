@@ -4,12 +4,13 @@ git push origin metax-port
 find src test \
     \( -name "*.c" -o -name "*.cc" -o -name "*.cpp" \
        -o -name "*.h" -o -name "*.hpp" \
-       -o -name "*.cu" -o -name "*.cuh" \) \
+       -o -name "*.cu" -o -name "*.cuh" \
+        -o -name "*.maca" \) \
     -exec clang-format -i {} +
 
 find src test -name "*.py" -exec black {} +
 
-
+Tensor → Add → SwiGLU → Rearrange → Embedding → Argmax → RMSNorm → RoPE → Linear → Self-Attention
 --------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
 rm -rf .xmake

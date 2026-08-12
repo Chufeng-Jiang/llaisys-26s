@@ -1,5 +1,10 @@
 import ctypes
 from ctypes import c_void_p, c_size_t, c_int, Structure, CFUNCTYPE
+from ctypes import (
+    POINTER,
+    CFUNCTYPE,
+    c_int,
+)
 from .llaisys_types import *
 
 # Define function pointer types
@@ -17,7 +22,9 @@ malloc_host_api = CFUNCTYPE(c_void_p, c_size_t)
 free_host_api = CFUNCTYPE(None, c_void_p)
 
 memcpy_sync_api = CFUNCTYPE(None, c_void_p, c_void_p, c_size_t, llaisysMemcpyKind_t)
-memcpy_async_api = CFUNCTYPE(None, c_void_p, c_void_p, c_size_t, llaisysMemcpyKind_t, llaisysStream_t)
+memcpy_async_api = CFUNCTYPE(
+    None, c_void_p, c_void_p, c_size_t, llaisysMemcpyKind_t, llaisysStream_t
+)
 
 
 # Define the struct matching LlaisysRuntimeAPI
@@ -45,4 +52,10 @@ def load_runtime(lib):
     lib.llaisysGetRuntimeAPI.restype = ctypes.POINTER(LlaisysRuntimeAPI)
 
     lib.llaisysSetContextRuntime.argtypes = [llaisysDeviceType_t, c_int]
-    lib.llaisysSetContextRuntime.restype = None
+    lib.llaisysSetContextRuntime.restype = c_int
+    lib.llaisysGetContextStream.argtypes = [
+        llaisysDeviceType_t,
+        c_int,
+        POINTER(llaisysStream_t),
+    ]
+    lib.llaisysGetContextStream.restype = c_int

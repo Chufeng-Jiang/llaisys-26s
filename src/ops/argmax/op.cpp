@@ -17,19 +17,16 @@ namespace llaisys::ops {
 
 void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
     CHECK_ARGUMENT(
-        max_idx != nullptr,
-        "Argmax: max_idx tensor "
-        "must not be null.");
+        max_idx != nullptr, "Argmax: max_idx tensor "
+                            "must not be null.");
 
     CHECK_ARGUMENT(
-        max_val != nullptr,
-        "Argmax: max_val tensor "
-        "must not be null.");
+        max_val != nullptr, "Argmax: max_val tensor "
+                            "must not be null.");
 
     CHECK_ARGUMENT(
-        vals != nullptr,
-        "Argmax: vals tensor "
-        "must not be null.");
+        vals != nullptr, "Argmax: vals tensor "
+                         "must not be null.");
 
     CHECK_ARGUMENT(vals->ndim() == 1, "Argmax: vals must be a 1D tensor.");
 
@@ -38,16 +35,14 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
     CHECK_ARGUMENT(max_idx->ndim() == 1, "Argmax: max_idx must be a 1D tensor.");
 
     CHECK_ARGUMENT(
-        max_idx->numel() == 1,
-        "Argmax: max_idx must contain "
-        "exactly one element.");
+        max_idx->numel() == 1, "Argmax: max_idx must contain "
+                               "exactly one element.");
 
     CHECK_ARGUMENT(max_val->ndim() == 1, "Argmax: max_val must be a 1D tensor.");
 
     CHECK_ARGUMENT(
-        max_val->numel() == 1,
-        "Argmax: max_val must contain "
-        "exactly one element.");
+        max_val->numel() == 1, "Argmax: max_val must contain "
+                               "exactly one element.");
 
     CHECK_ARGUMENT(vals->isContiguous(), "Argmax: vals must be contiguous.");
 
@@ -56,14 +51,12 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
     CHECK_ARGUMENT(max_val->isContiguous(), "Argmax: max_val must be contiguous.");
 
     CHECK_ARGUMENT(
-        max_idx->dtype() == LLAISYS_DTYPE_I64,
-        "Argmax: max_idx must have "
-        "Int64 data type.");
+        max_idx->dtype() == LLAISYS_DTYPE_I64, "Argmax: max_idx must have "
+                                               "Int64 data type.");
 
     CHECK_ARGUMENT(
-        max_val->dtype() == vals->dtype(),
-        "Argmax: max_val and vals "
-        "must have the same data type.");
+        max_val->dtype() == vals->dtype(), "Argmax: max_val and vals "
+                                           "must have the same data type.");
 
     switch (vals->dtype()) {
     case LLAISYS_DTYPE_F32:
@@ -90,13 +83,8 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
         auto &runtime = core::context().runtime();
 
         nvidia::argmax(
-            max_idx->data(),
-            max_val->data(),
-            vals->data(),
-            vals->dtype(),
-            vals->numel(),
-            runtime.resource(),
-            runtime.stream());
+            max_idx->data(), max_val->data(), vals->data(), vals->dtype(), vals->numel(),
+            runtime.resource(), runtime.stream());
 
         return;
     }
@@ -111,13 +99,8 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
         auto &runtime = core::context().runtime();
 
         metax::argmax(
-            max_idx->data(),
-            max_val->data(),
-            vals->data(),
-            vals->dtype(),
-            vals->numel(),
-            vals->deviceId(),
-            runtime.stream());
+            max_idx->data(), max_val->data(), vals->data(), vals->dtype(), vals->numel(),
+            vals->deviceId(), runtime.stream());
 
         return;
     }

@@ -9,14 +9,14 @@ using tensor_t = std::shared_ptr<Tensor>;
 struct TensorMeta {
     llaisysDataType_t dtype;
     std::vector<size_t> shape;
-    std::vector<ptrdiff_t> strides; // 某一维的下标增加1时，需要跨过多少个元素才能到达下一个元素
+    std::vector<ptrdiff_t> strides;
 };
 
 class Tensor {
 private:
     TensorMeta _meta;
     core::storage_t _storage;
-    size_t _offset; // 完整的数据起始地址是_storage->memory() + _offset
+    size_t _offset;
     Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
 
 public:

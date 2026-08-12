@@ -4,6 +4,7 @@
 #include "../../../device/nvidia/nvidia_dtype.cuh"
 #include "../../../device/nvidia/nvidia_resource.cuh"
 #include "../../../utils.hpp"
+#include "../../cuda_compat/common.cuh"
 #include "../cuda_compat/self_attention_cuda_compat.cuh"
 
 #include <algorithm>
@@ -58,7 +59,7 @@ using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE;
 using llaisys::device::nvidia::CUDA_WARP_SIZE;
 using llaisys::device::nvidia::from_float;
-using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_device_properties;
 using llaisys::device::nvidia::run_on_cuda_device_noexcept;
 using llaisys::device::nvidia::to_cuda_stream;
@@ -346,18 +347,16 @@ void launch_fallback(
 
     if (shared_bytes > static_cast<std::size_t>(properties.sharedMemPerBlock)) {
         CUDA_CHECK(cudaFuncSetAttribute(
-            self_attention_fallback_kernel<T>,
-            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            self_attention_fallback_kernel<T>, cudaFuncAttributeMaxDynamicSharedMemorySize,
             static_cast<int>(shared_bytes)));
     }
 
     const std::size_t grid_size = get_capped_grid_size(task_count, 1, CUDA_DEFAULT_MAX_GRID_SIZE);
 
     self_attention_fallback_kernel<T>
-        <<<static_cast<unsigned int>(grid_size),
-           static_cast<unsigned int>(CUDA_BLOCK_SIZE),
-           shared_bytes,
-           stream>>>(attn_val, q, k, v, scale, seqlen, nhead, dv, total_len, nkvhead, d);
+        <<<static_cast<unsigned int>(grid_size), static_cast<unsigned int>(CUDA_BLOCK_SIZE),
+           shared_bytes, stream>>>(
+            attn_val, q, k, v, scale, seqlen, nhead, dv, total_len, nkvhead, d);
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -464,8 +463,7 @@ void launch_cuda_compat_baseline(
     if (shared_bytes > static_cast<std::size_t>(properties.sharedMemPerBlock)) {
         CUDA_CHECK(cudaFuncSetAttribute(
             cuda_compat::self_attention_portable_kernel<T>,
-            cudaFuncAttributeMaxDynamicSharedMemorySize,
-            static_cast<int>(shared_bytes)));
+            cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(shared_bytes)));
     }
 
     // ========================================================
@@ -479,21 +477,8 @@ void launch_cuda_compat_baseline(
     // ========================================================
 
     cuda_compat::launch_self_attention_portable<T>(
-        attn_val,
-        q,
-        k,
-        v,
-        scale,
-        seqlen,
-        nhead,
-        dv,
-        total_len,
-        nkvhead,
-        d,
-        static_cast<unsigned int>(CUDA_BLOCK_SIZE),
-        grid_size,
-        shared_bytes,
-        stream);
+        attn_val, q, k, v, scale, seqlen, nhead, dv, total_len, nkvhead, d,
+        static_cast<unsigned int>(CUDA_BLOCK_SIZE), grid_size, shared_bytes, stream);
 
     CUDA_CHECK(cudaGetLastError());
 }
@@ -894,15 +879,7 @@ bool try_cudnn(
     CUDA_CHECK(cudaGetDevice(&device));
 
     const CudnnGraphKey key{
-        device,
-        type,
-        seqlen,
-        nhead,
-        dv,
-        total_len,
-        nkvhead,
-        d,
-        float_bits(scale),
+        device, type, seqlen, nhead, dv, total_len, nkvhead, d, float_bits(scale),
     };
 
     auto &device_cache = cudnn_device_caches[device];
@@ -966,9 +943,8 @@ void self_attention(
         "SelfAttention: query head count must be a multiple of KV head count.");
 
     CHECK_ARGUMENT(
-        total_len >= seqlen,
-        "SelfAttention: total KV length must not be smaller than query "
-        "length.");
+        total_len >= seqlen, "SelfAttention: total KV length must not be smaller than query "
+                             "length.");
 
     CHECK_ARGUMENT(d > 0, "SelfAttention: query/key head dimension must be greater than zero.");
 
@@ -977,24 +953,20 @@ void self_attention(
     CHECK_ARGUMENT(std::isfinite(scale), "SelfAttention: scale must be finite.");
 
     const std::size_t output_elements = checked_product(
-        checked_product(seqlen, nhead, "SelfAttention: output vector count overflows size_t."),
-        dv,
+        checked_product(seqlen, nhead, "SelfAttention: output vector count overflows size_t."), dv,
         "SelfAttention: output element count overflows size_t.");
 
     const std::size_t query_elements = checked_product(
-        checked_product(seqlen, nhead, "SelfAttention: query vector count overflows size_t."),
-        d,
+        checked_product(seqlen, nhead, "SelfAttention: query vector count overflows size_t."), d,
         "SelfAttention: query element count overflows size_t.");
 
     const std::size_t key_elements = checked_product(
-        checked_product(total_len, nkvhead, "SelfAttention: key vector count overflows size_t."),
-        d,
+        checked_product(total_len, nkvhead, "SelfAttention: key vector count overflows size_t."), d,
         "SelfAttention: key element count overflows size_t.");
 
     const std::size_t value_elements = checked_product(
         checked_product(total_len, nkvhead, "SelfAttention: value vector count overflows size_t."),
-        dv,
-        "SelfAttention: value element count overflows size_t.");
+        dv, "SelfAttention: value element count overflows size_t.");
 
     CHECK_ARGUMENT(
         output_elements == 0 || attn_val != nullptr,
@@ -1023,18 +995,9 @@ void self_attention(
         using T = typename decltype(tag)::type;
 
         return launch_cuda_compat_baseline<T>(
-            reinterpret_cast<T *>(attn_val),
-            reinterpret_cast<const T *>(q),
-            reinterpret_cast<const T *>(k),
-            reinterpret_cast<const T *>(v),
-            scale,
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
-            cuda_stream);
+            reinterpret_cast<T *>(attn_val), reinterpret_cast<const T *>(q),
+            reinterpret_cast<const T *>(k), reinterpret_cast<const T *>(v), scale, seqlen, nhead,
+            dv, total_len, nkvhead, d, cuda_stream);
     });
 
 #else
@@ -1055,18 +1018,7 @@ void self_attention(
 #if LLAISYS_HAS_CUDNN_SDPA
 
     if (try_cudnn(
-            attn_val,
-            q,
-            k,
-            v,
-            scale,
-            type,
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
+            attn_val, q, k, v, scale, type, seqlen, nhead, dv, total_len, nkvhead, d,
             cuda_stream)) {
         return;
     }
@@ -1077,18 +1029,9 @@ void self_attention(
         using T = typename decltype(tag)::type;
 
         return launch_fallback<T>(
-            reinterpret_cast<T *>(attn_val),
-            reinterpret_cast<const T *>(q),
-            reinterpret_cast<const T *>(k),
-            reinterpret_cast<const T *>(v),
-            scale,
-            seqlen,
-            nhead,
-            dv,
-            total_len,
-            nkvhead,
-            d,
-            cuda_stream);
+            reinterpret_cast<T *>(attn_val), reinterpret_cast<const T *>(q),
+            reinterpret_cast<const T *>(k), reinterpret_cast<const T *>(v), scale, seqlen, nhead,
+            dv, total_len, nkvhead, d, cuda_stream);
     });
 
 #endif

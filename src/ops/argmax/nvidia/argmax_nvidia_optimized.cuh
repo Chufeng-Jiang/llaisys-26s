@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../cuda_compat/argmax_cuda_compat.cuh"
-
 #include "../../../device/nvidia/nvidia_common.cuh"
+#include "../../cuda_compat/common.cuh"
 
 #include <cuda_runtime.h>
 
@@ -23,7 +23,7 @@ using cuda_compat::update_argmax_result;
 using llaisys::device::nvidia::CUDA_BLOCK_SIZE;
 using llaisys::device::nvidia::CUDA_MAX_WARPS_PER_BLOCK;
 using llaisys::device::nvidia::CUDA_WARP_SIZE;
-using llaisys::device::nvidia::get_capped_grid_size;
+using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::device::nvidia::get_warp_aligned_block_size;
 
 // ============================================================
@@ -305,7 +305,10 @@ inline void launch_argmax_optimized(
 
     constexpr std::size_t block_size = CUDA_BLOCK_SIZE;
 
-    const std::size_t grid_size = get_capped_grid_size(numel, block_size);
+    const std::size_t grid_size = get_capped_grid_size(
+    numel,
+    block_size,
+    llaisys::device::nvidia::CUDA_DEFAULT_MAX_GRID_SIZE);
 
     // Kernel 1:
     // reset reusable packed workspace.
@@ -318,9 +321,7 @@ inline void launch_argmax_optimized(
     // multi-block local reduction + atomic global merge.
 
     argmax_multi_block_kernel<T>
-        <<<static_cast<unsigned int>(grid_size),
-           static_cast<unsigned int>(block_size),
-           0,
+        <<<static_cast<unsigned int>(grid_size), static_cast<unsigned int>(block_size), 0,
            stream>>>(packed_workspace, vals, numel);
 
     CUDA_CHECK(cudaGetLastError());

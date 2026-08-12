@@ -54,15 +54,10 @@ using bf16x2_t = __nv_bfloat162;
 // ============================================================
 
 static_assert(sizeof(fp16_t) == 2, "CUDA-compatible FP16 type must occupy 2 bytes.");
-
 static_assert(sizeof(fp16x2_t) == 4, "CUDA-compatible FP16x2 type must occupy 4 bytes.");
-
 static_assert(sizeof(bf16_t) == 2, "CUDA-compatible BF16 type must occupy 2 bytes.");
-
 static_assert(sizeof(bf16x2_t) == 4, "CUDA-compatible BF16x2 type must occupy 4 bytes.");
-
 static_assert(sizeof(float4) == 16, "CUDA-compatible float4 must occupy 16 bytes.");
-
 static_assert(sizeof(uint4) == 16, "CUDA-compatible uint4 must occupy 16 bytes.");
 
 // ============================================================
@@ -77,6 +72,26 @@ template <typename> inline constexpr bool DEPENDENT_FALSE = false;
 
 __host__ __device__ constexpr std::size_t div_ceil(std::size_t value, std::size_t divisor) {
     return value / divisor + static_cast<std::size_t>(value % divisor != 0);
+}
+
+/**
+ * @brief Computes the number of thread blocks needed for a workload,
+ *        limited by a caller-provided grid-size cap.
+ *
+ * The required number of blocks is:
+ *
+ *     ceil(work_items / block_size)
+ *
+ * If that value exceeds max_grid_size, the returned grid size is capped.
+ *
+ * This helper only implements the shared grid-size calculation.
+ * The block size and maximum grid size remain backend-specific policies.
+ */
+inline std::size_t
+get_capped_grid_size(std::size_t work_items, std::size_t block_size, std::size_t max_grid_size) {
+    const std::size_t required_blocks = div_ceil(work_items, block_size);
+
+    return required_blocks < max_grid_size ? required_blocks : max_grid_size;
 }
 
 // ============================================================
@@ -135,11 +150,8 @@ inline bool are_aligned(PointerTypes... pointers) {
 using Packed128 = uint4;
 
 inline constexpr std::size_t PACKED_128_BYTES = sizeof(Packed128);
-
 inline constexpr std::size_t PACKED_128_ALIGNMENT = alignof(Packed128);
-
 static_assert(PACKED_128_BYTES == 16, "Packed128 must occupy exactly 16 bytes.");
-
 static_assert(PACKED_128_ALIGNMENT == 16, "Packed128 must require 16-byte alignment.");
 
 template <typename T>

@@ -62,9 +62,8 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
 
     // Output row length must equal weight row length.
     CHECK_ARGUMENT(
-        out->shape()[1] == embedding_length,
-        "Embedding: output embedding length must match "
-        "weight embedding length.");
+        out->shape()[1] == embedding_length, "Embedding: output embedding length must match "
+                                             "weight embedding length.");
 
     // These checks are technically implied by the shape checks,
     // but make the intended relationship explicit.
@@ -86,9 +85,8 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
 
     // The output stores rows copied directly from weight.
     CHECK_ARGUMENT(
-        out->dtype() == weight->dtype(),
-        "Embedding: output and weight tensors must have "
-        "the same data type.");
+        out->dtype() == weight->dtype(), "Embedding: output and weight tensors must have "
+                                         "the same data type.");
 
     // ============================================================
     // Device checks
@@ -124,13 +122,8 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     switch (out->deviceType()) {
     case LLAISYS_DEVICE_CPU:
         return cpu::embedding(
-            out->data(),
-            index->data(),
-            weight->data(),
-            weight->dtype(),
-            out->numel(),
-            embedding_length,
-            vocabulary_size);
+            out->data(), index->data(), weight->data(), weight->dtype(), out->numel(),
+            embedding_length, vocabulary_size);
 
 #ifdef ENABLE_NVIDIA_API
     case LLAISYS_DEVICE_NVIDIA: {
@@ -140,14 +133,8 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
         auto &runtime = core::context().runtime();
 
         return nvidia::embedding(
-            out->data(),
-            index->data(),
-            weight->data(),
-            weight->dtype(),
-            out->numel(),
-            embedding_length,
-            vocabulary_size,
-            runtime.stream());
+            out->data(), index->data(), weight->data(), weight->dtype(), out->numel(),
+            embedding_length, vocabulary_size, runtime.stream());
     }
 #endif
 
@@ -159,14 +146,8 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
         auto &runtime = core::context().runtime();
 
         return metax::embedding(
-            out->data(),
-            index->data(),
-            weight->data(),
-            weight->dtype(),
-            out->numel(),
-            embedding_length,
-            vocabulary_size,
-            runtime.stream());
+            out->data(), index->data(), weight->data(), weight->dtype(), out->numel(),
+            embedding_length, vocabulary_size, runtime.stream());
     }
 #endif
 

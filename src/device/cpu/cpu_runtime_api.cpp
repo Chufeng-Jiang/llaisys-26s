@@ -44,18 +44,10 @@ void memcpyAsync(
     memcpySync(dst, src, size, kind);
 }
 
-static const LlaisysRuntimeAPI RUNTIME_API = {&getDeviceCount,
-                                              &setDevice,
-                                              &deviceSynchronize,
-                                              &createStream,
-                                              &destroyStream,
-                                              &streamSynchronize,
-                                              &mallocDevice,
-                                              &freeDevice,
-                                              &mallocHost,
-                                              &freeHost,
-                                              &memcpySync,
-                                              &memcpyAsync};
+static const LlaisysRuntimeAPI RUNTIME_API
+    = {&getDeviceCount, &setDevice,         &deviceSynchronize, &createStream,
+       &destroyStream,  &streamSynchronize, &mallocDevice,      &freeDevice,
+       &mallocHost,     &freeHost,          &memcpySync,        &memcpyAsync};
 
 } // namespace runtime_api
 
