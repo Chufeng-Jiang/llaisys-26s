@@ -1,31 +1,16 @@
 import os
 import sys
 
-parent_dir = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-    )
-)
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
 import torch
-from test_utils import (
-    arrange_tensor,
-    benchmark_llaisys,
-    check_equal,
-    random_tensor,
-)
+from test_utils import arrange_tensor, benchmark_llaisys, check_equal, random_tensor
 
 import llaisys
 
 
-def torch_rope(
-    y: torch.Tensor,
-    x: torch.Tensor,
-    pos_ids: torch.Tensor,
-    theta: float,
-):
+def torch_rope(y: torch.Tensor, x: torch.Tensor, pos_ids: torch.Tensor, theta: float):
     assert y.dim() == 3
 
     seq_len, n_heads, head_dim = y.shape
@@ -53,12 +38,7 @@ def torch_rope(
     # angle       = position / denominator
     # ========================================================
 
-    i = torch.arange(
-        0,
-        head_dim // 2,
-        dtype=torch.float32,
-        device=y.device,
-    )
+    i = torch.arange(0, head_dim // 2, dtype=torch.float32, device=y.device)
 
     exponent = 2.0 * i / head_dim
 
@@ -79,61 +59,26 @@ def torch_rope(
     y[..., head_dim // 2 :] = x_b * cos + x_a * sin
 
 
-def test_op_rope(
-    shape,
-    start_end,
-    dtype_name="f32",
-    atol=1e-5,
-    rtol=1e-5,
-    device_name="cpu",
-    profile=False,
-):
+def test_op_rope(shape, start_end, dtype_name="f32", atol=1e-5, rtol=1e-5, device_name="cpu", profile=False):
     print(f"   shape {shape} range {start_end} dtype <{dtype_name}>")
 
-    x, x_ = random_tensor(
-        shape,
-        dtype_name,
-        device_name,
-    )
+    x, x_ = random_tensor(shape, dtype_name, device_name)
 
-    pos_ids, pos_ids_ = arrange_tensor(
-        start_end[0],
-        start_end[1],
-        device_name,
-    )
+    pos_ids, pos_ids_ = arrange_tensor(start_end[0], start_end[1], device_name)
 
     theta = 10000.0
 
-    y, y_ = random_tensor(
-        shape,
-        dtype_name,
-        device_name,
-    )
+    y, y_ = random_tensor(shape, dtype_name, device_name)
 
     # ========================================================
     # Correctness reference
     # ========================================================
 
-    torch_rope(
-        y,
-        x,
-        pos_ids,
-        theta,
-    )
+    torch_rope(y, x, pos_ids, theta)
 
-    llaisys.Ops.rope(
-        y_,
-        x_,
-        pos_ids_,
-        theta,
-    )
+    llaisys.Ops.rope(y_, x_, pos_ids_, theta)
 
-    assert check_equal(
-        y_,
-        y,
-        atol=atol,
-        rtol=rtol,
-    )
+    assert check_equal(y_, y, atol=atol, rtol=rtol)
 
     # ========================================================
     # LLAISYS profiling
@@ -141,12 +86,7 @@ def test_op_rope(
 
     if profile:
         benchmark_llaisys(
-            lambda: llaisys.Ops.rope(
-                y_,
-                x_,
-                pos_ids_,
-                theta,
-            ),
+            lambda: llaisys.Ops.rope(y_, x_, pos_ids_, theta),
             device_name,
             label=(f"RoPE shape={shape} range={start_end} dtype={dtype_name}"),
         )
@@ -157,21 +97,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=[
-            "cpu",
-            "nvidia",
-            "metax",
-        ],
-        type=str,
-    )
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
 
-    parser.add_argument(
-        "--profile",
-        action="store_true",
-    )
+    parser.add_argument("--profile", action="store_true")
 
     args = parser.parse_args()
 
@@ -203,30 +131,15 @@ if __name__ == "__main__":
 
     test_shapes = [
         # Existing tiny direct sanity check
-        (
-            (2, 1, 4),
-            (0, 2),
-        ),
+        ((2, 1, 4), (0, 2)),
         # Decode-like: small head dimension, multi-head
-        (
-            (1, 12, 128),
-            (512, 513),
-        ),
+        ((1, 12, 128), (512, 513)),
         # Prefill-like: small head dimension, multi-head
-        (
-            (512, 12, 128),
-            (512, 1024),
-        ),
+        ((512, 12, 128), (512, 1024)),
         # Intermediate head dimension
-        (
-            (512, 12, 256),
-            (512, 1024),
-        ),
+        ((512, 12, 256), (512, 1024)),
         # Stress case: already known cache regression
-        (
-            (512, 4, 4096),
-            (512, 1024),
-        ),
+        ((512, 4, 4096), (512, 1024)),
     ]
 
     # Temporarily test FP32 only while diagnosing
@@ -241,14 +154,6 @@ if __name__ == "__main__":
 
     for shape, start_end in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
-            test_op_rope(
-                shape,
-                start_end,
-                dtype_name,
-                atol,
-                rtol,
-                args.device,
-                args.profile,
-            )
+            test_op_rope(shape, start_end, dtype_name, atol, rtol, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

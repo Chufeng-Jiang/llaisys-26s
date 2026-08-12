@@ -9,10 +9,7 @@ print(model_path)
 
 config_path = model_path / "config.json"
 
-with config_path.open(
-    "r",
-    encoding="utf-8",
-) as file:
+with config_path.open("r", encoding="utf-8") as file:
     config = json.load(file)
 
 print("\n===== Important config fields =====")
@@ -49,10 +46,7 @@ def read_safetensors_header(file_path):
         if len(header_size_bytes) != 8:
             raise RuntimeError(f"Invalid safetensors file: {file_path}")
 
-        header_size = struct.unpack(
-            "<Q",
-            header_size_bytes,
-        )[0]
+        header_size = struct.unpack("<Q", header_size_bytes)[0]
 
         header_bytes = file.read(header_size)
 
@@ -79,29 +73,17 @@ for file_path in safetensor_files:
         if name in all_tensors:
             raise RuntimeError(f"Duplicate tensor name: {name}")
 
-        all_tensors[name] = {
-            "file": file_path.name,
-            "dtype": info["dtype"],
-            "shape": info["shape"],
-        }
+        all_tensors[name] = {"file": file_path.name, "dtype": info["dtype"], "shape": info["shape"]}
 
 print("\n===== Tensor summary =====")
 print("Tensor count:", len(all_tensors))
 
 print("\n===== Global weights =====")
 
-global_names = [
-    "model.embed_tokens.weight",
-    "model.norm.weight",
-    "lm_head.weight",
-]
+global_names = ["model.embed_tokens.weight", "model.norm.weight", "lm_head.weight"]
 
 for name in global_names:
-    print(
-        name,
-        "->",
-        all_tensors.get(name),
-    )
+    print(name, "->", all_tensors.get(name))
 
 print("\n===== Layer 0 weights =====")
 

@@ -11,38 +11,21 @@ import triton
 
 repo_root = Path(__file__).resolve().parents[1]
 
-sys.path.insert(
-    0,
-    str(repo_root / "python"),
-)
+sys.path.insert(0, str(repo_root / "python"))
 
-sys.path.insert(
-    0,
-    str(repo_root / "test"),
-)
+sys.path.insert(0, str(repo_root / "test"))
 
 
 # ============================================================
 # Imports
 # ============================================================
 
-from llaisys.libllaisys import (
-    DeviceType,
-)
+from llaisys.libllaisys import DeviceType
 from llaisys.runtime import RuntimeAPI
-from llaisys.triton.backends.nvidia import (
-    NvidiaTritonBackend,
-)
-from llaisys.triton.kernels.add import (
-    add_kernel,
-)
-from llaisys.triton.tensor import (
-    as_nvidia_triton_tensor,
-)
-from test_utils import (
-    check_equal,
-    random_tensor,
-)
+from llaisys.triton.backends.nvidia import NvidiaTritonBackend
+from llaisys.triton.kernels.add import add_kernel
+from llaisys.triton.tensor import as_nvidia_triton_tensor
+from test_utils import check_equal, random_tensor
 
 import llaisys
 
@@ -51,11 +34,7 @@ import llaisys
 # ============================================================
 
 
-_DTYPE_BYTES = {
-    "f32": 4,
-    "f16": 2,
-    "bf16": 2,
-}
+_DTYPE_BYTES = {"f32": 4, "f16": 2, "bf16": 2}
 
 
 # ============================================================
@@ -89,24 +68,12 @@ _DTYPE_BYTES = {
 # ============================================================
 
 
-def benchmark_gpu_events(
-    func,
-    runtime,
-    backend,
-    stream_ptr,
-    device_id,
-    warmup=100,
-    repeat=1000,
-    rounds=20,
-):
+def benchmark_gpu_events(func, runtime, backend, stream_ptr, device_id, warmup=100, repeat=1000, rounds=20):
     # ========================================================
     # Warmup
     # ========================================================
 
-    with backend.stream_context(
-        stream_ptr,
-        device_id,
-    ):
+    with backend.stream_context(stream_ptr, device_id):
         for _ in range(warmup):
             func()
 
@@ -123,10 +90,7 @@ def benchmark_gpu_events(
 
         end_event = torch.cuda.Event(enable_timing=True)
 
-        with backend.stream_context(
-            stream_ptr,
-            device_id,
-        ):
+        with backend.stream_context(stream_ptr, device_id):
             # ------------------------------------------------
             # Event is inserted into the LLAISYS stream.
             # ------------------------------------------------
@@ -181,11 +145,7 @@ def benchmark_gpu_events(
 # ============================================================
 
 
-def effective_bandwidth_gbps(
-    numel,
-    dtype_name,
-    latency_us,
-):
+def effective_bandwidth_gbps(numel, dtype_name, latency_us):
     if latency_us <= 0:
         return 0.0
 
@@ -203,10 +163,7 @@ def effective_bandwidth_gbps(
 # ============================================================
 
 
-def benchmark_case(
-    shape,
-    dtype_name,
-):
+def benchmark_case(shape, dtype_name):
     print()
     print("============================================================")
 
@@ -218,29 +175,13 @@ def benchmark_case(
     # Tensors
     # ========================================================
 
-    a_ref, a = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    a_ref, a = random_tensor(shape, dtype_name, "nvidia")
 
-    b_ref, b = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    b_ref, b = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_native = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_native = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_triton = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_triton = random_tensor(shape, dtype_name, "nvidia")
 
     device_id = a.device_id()
 
@@ -279,11 +220,7 @@ def benchmark_case(
     # ========================================================
 
     def native_op():
-        llaisys.Ops.add(
-            c_native,
-            a,
-            b,
-        )
+        llaisys.Ops.add(c_native, a, b)
 
     # ========================================================
     # Triton pre-bound path
@@ -299,12 +236,7 @@ def benchmark_case(
 
     block_size = config["BLOCK_SIZE"]
 
-    grid = (
-        triton.cdiv(
-            numel,
-            block_size,
-        ),
-    )
+    grid = (triton.cdiv(numel, block_size),)
 
     c_triton_wrapper = as_nvidia_triton_tensor(c_triton)
 
@@ -330,47 +262,22 @@ def benchmark_case(
 
     native_op()
 
-    with backend.stream_context(
-        stream_ptr,
-        device_id,
-    ):
+    with backend.stream_context(stream_ptr, device_id):
         triton_op()
 
     runtime.device_synchronize()
 
-    assert check_equal(
-        c_native,
-        expected,
-        atol=1e-3,
-        rtol=1e-3,
-    )
+    assert check_equal(c_native, expected, atol=1e-3, rtol=1e-3)
 
-    assert check_equal(
-        c_triton,
-        expected,
-        atol=1e-3,
-        rtol=1e-3,
-    )
+    assert check_equal(c_triton, expected, atol=1e-3, rtol=1e-3)
 
     # ========================================================
     # GPU timing
     # ========================================================
 
-    native_result = benchmark_gpu_events(
-        native_op,
-        runtime,
-        backend,
-        stream_ptr,
-        device_id,
-    )
+    native_result = benchmark_gpu_events(native_op, runtime, backend, stream_ptr, device_id)
 
-    triton_result = benchmark_gpu_events(
-        triton_op,
-        runtime,
-        backend,
-        stream_ptr,
-        device_id,
-    )
+    triton_result = benchmark_gpu_events(triton_op, runtime, backend, stream_ptr, device_id)
 
     # ========================================================
     # Extract results
@@ -399,17 +306,9 @@ def benchmark_case(
     # Effective bandwidth
     # ========================================================
 
-    native_bw = effective_bandwidth_gbps(
-        numel,
-        dtype_name,
-        native_us,
-    )
+    native_bw = effective_bandwidth_gbps(numel, dtype_name, native_us)
 
-    triton_bw = effective_bandwidth_gbps(
-        numel,
-        dtype_name,
-        triton_us,
-    )
+    triton_bw = effective_bandwidth_gbps(numel, dtype_name, triton_us)
 
     # ========================================================
     # Detailed output
@@ -505,10 +404,7 @@ if __name__ == "__main__":
     results = []
 
     for shape, dtype_name in test_cases:
-        result = benchmark_case(
-            shape,
-            dtype_name,
-        )
+        result = benchmark_case(shape, dtype_name)
 
         results.append(result)
 

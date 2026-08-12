@@ -1,21 +1,7 @@
 from collections.abc import Sequence
-from ctypes import (
-    byref,
-    c_int,
-    c_size_t,
-    c_ssize_t,
-    c_uint8,
-    c_void_p,
-)
+from ctypes import byref, c_int, c_size_t, c_ssize_t, c_uint8, c_void_p
 
-from .libllaisys import (
-    LIB_LLAISYS,
-    DataType,
-    DeviceType,
-    llaisysDataType_t,
-    llaisysDeviceType_t,
-    llaisysTensor_t,
-)
+from .libllaisys import LIB_LLAISYS, DataType, DeviceType, llaisysDataType_t, llaisysDeviceType_t, llaisysTensor_t
 
 
 class Tensor:
@@ -40,11 +26,7 @@ class Tensor:
             _shape = None if shape is None else (c_size_t * len(shape))(*shape)
 
             self._tensor: llaisysTensor_t = LIB_LLAISYS.tensorCreate(
-                _shape,
-                c_size_t(_ndim),
-                llaisysDataType_t(dtype),
-                llaisysDeviceType_t(device),
-                c_int(device_id),
+                _shape, c_size_t(_ndim), llaisysDataType_t(dtype), llaisysDeviceType_t(device), c_int(device_id)
             )
 
         # ========================================================
@@ -81,10 +63,7 @@ class Tensor:
 
         ndim_value = c_size_t()
 
-        LIB_LLAISYS.tensorGetNdim(
-            self._tensor,
-            byref(ndim_value),
-        )
+        LIB_LLAISYS.tensorGetNdim(self._tensor, byref(ndim_value))
 
         self._cached_ndim = int(ndim_value.value)
 
@@ -97,10 +76,7 @@ class Tensor:
         else:
             shape_buf = (c_size_t * self._cached_ndim)()
 
-            LIB_LLAISYS.tensorGetShape(
-                self._tensor,
-                shape_buf,
-            )
+            LIB_LLAISYS.tensorGetShape(self._tensor, shape_buf)
 
             self._cached_shape = tuple(int(shape_buf[i]) for i in range(self._cached_ndim))
 
@@ -113,10 +89,7 @@ class Tensor:
         else:
             strides_buf = (c_ssize_t * self._cached_ndim)()
 
-            LIB_LLAISYS.tensorGetStrides(
-                self._tensor,
-                strides_buf,
-            )
+            LIB_LLAISYS.tensorGetStrides(self._tensor, strides_buf)
 
             self._cached_strides = tuple(int(strides_buf[i]) for i in range(self._cached_ndim))
 
@@ -126,10 +99,7 @@ class Tensor:
 
         dtype_value = llaisysDataType_t()
 
-        LIB_LLAISYS.tensorGetDataType(
-            self._tensor,
-            byref(dtype_value),
-        )
+        LIB_LLAISYS.tensorGetDataType(self._tensor, byref(dtype_value))
 
         self._cached_dtype = DataType(dtype_value.value)
 
@@ -139,10 +109,7 @@ class Tensor:
 
         device_type_value = llaisysDeviceType_t()
 
-        LIB_LLAISYS.tensorGetDeviceType(
-            self._tensor,
-            byref(device_type_value),
-        )
+        LIB_LLAISYS.tensorGetDeviceType(self._tensor, byref(device_type_value))
 
         self._cached_device_type = DeviceType(device_type_value.value)
 
@@ -152,10 +119,7 @@ class Tensor:
 
         device_id_value = c_int()
 
-        LIB_LLAISYS.tensorGetDeviceId(
-            self._tensor,
-            byref(device_id_value),
-        )
+        LIB_LLAISYS.tensorGetDeviceId(self._tensor, byref(device_id_value))
 
         self._cached_device_id = int(device_id_value.value)
 
@@ -210,10 +174,7 @@ class Tensor:
     def data_ptr(self) -> int:
         value = c_void_p()
 
-        LIB_LLAISYS.tensorGetData(
-            self._tensor,
-            byref(value),
-        )
+        LIB_LLAISYS.tensorGetData(self._tensor, byref(value))
 
         return 0 if value.value is None else int(value.value)
 
@@ -238,14 +199,8 @@ class Tensor:
     # Data loading
     # ============================================================
 
-    def load(
-        self,
-        data: c_void_p,
-    ):
-        LIB_LLAISYS.tensorLoad(
-            self._tensor,
-            data,
-        )
+    def load(self, data: c_void_p):
+        LIB_LLAISYS.tensorLoad(self._tensor, data)
 
     # ============================================================
     # Layout
@@ -254,10 +209,7 @@ class Tensor:
     def is_contiguous(self) -> bool:
         value = c_uint8()
 
-        LIB_LLAISYS.tensorIsContiguous(
-            self._tensor,
-            byref(value),
-        )
+        LIB_LLAISYS.tensorIsContiguous(self._tensor, byref(value))
 
         return bool(value.value)
 
@@ -271,19 +223,10 @@ class Tensor:
     # new Tensor and obtains its new shape/strides.
     # ============================================================
 
-    def view(
-        self,
-        *shape: int,
-    ):
+    def view(self, *shape: int):
         _shape = (c_size_t * len(shape))(*shape)
 
-        return Tensor(
-            tensor=LIB_LLAISYS.tensorView(
-                self._tensor,
-                _shape,
-                c_size_t(len(shape)),
-            )
-        )
+        return Tensor(tensor=LIB_LLAISYS.tensorView(self._tensor, _shape, c_size_t(len(shape))))
 
     # ============================================================
     # Permute
@@ -293,20 +236,12 @@ class Tensor:
     # its constructor obtains a fresh metadata cache.
     # ============================================================
 
-    def permute(
-        self,
-        *perm: int,
-    ):
+    def permute(self, *perm: int):
         assert len(perm) == self.ndim()
 
         _perm = (c_size_t * len(perm))(*perm)
 
-        return Tensor(
-            tensor=LIB_LLAISYS.tensorPermute(
-                self._tensor,
-                _perm,
-            )
-        )
+        return Tensor(tensor=LIB_LLAISYS.tensorPermute(self._tensor, _perm))
 
     # ============================================================
     # Slice
@@ -319,17 +254,5 @@ class Tensor:
     # underlying Tensor's actual data address.
     # ============================================================
 
-    def slice(
-        self,
-        dim: int,
-        start: int,
-        end: int,
-    ):
-        return Tensor(
-            tensor=LIB_LLAISYS.tensorSlice(
-                self._tensor,
-                c_size_t(dim),
-                c_size_t(start),
-                c_size_t(end),
-            )
-        )
+    def slice(self, dim: int, start: int, end: int):
+        return Tensor(tensor=LIB_LLAISYS.tensorSlice(self._tensor, c_size_t(dim), c_size_t(start), c_size_t(end)))

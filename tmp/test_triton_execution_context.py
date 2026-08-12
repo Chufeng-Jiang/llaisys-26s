@@ -7,15 +7,9 @@ from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[1]
 
-sys.path.insert(
-    0,
-    str(repo_root / "python"),
-)
+sys.path.insert(0, str(repo_root / "python"))
 
-sys.path.insert(
-    0,
-    str(repo_root / "test"),
-)
+sys.path.insert(0, str(repo_root / "test"))
 
 
 # ============================================================
@@ -25,10 +19,7 @@ sys.path.insert(
 from llaisys.libllaisys import DeviceType
 from llaisys.triton import execution_context
 from llaisys.triton.ops import add as triton_add
-from test_utils import (
-    check_equal,
-    random_tensor,
-)
+from test_utils import check_equal, random_tensor
 
 import llaisys
 
@@ -37,51 +28,22 @@ import llaisys
 # ============================================================
 
 
-def test_execution_context_ordering(
-    shape,
-    dtype_name,
-    atol,
-    rtol,
-):
+def test_execution_context_ordering(shape, dtype_name, atol, rtol):
     # --------------------------------------------------------
     # Inputs
     # --------------------------------------------------------
 
-    a_ref, a = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    a_ref, a = random_tensor(shape, dtype_name, "nvidia")
 
-    b_ref, b = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    b_ref, b = random_tensor(shape, dtype_name, "nvidia")
 
-    _, tmp1 = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, tmp1 = random_tensor(shape, dtype_name, "nvidia")
 
-    _, tmp2 = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, tmp2 = random_tensor(shape, dtype_name, "nvidia")
 
-    _, tmp3 = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, tmp3 = random_tensor(shape, dtype_name, "nvidia")
 
-    _, out = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, out = random_tensor(shape, dtype_name, "nvidia")
 
     # ========================================================
     # Reference
@@ -115,21 +77,14 @@ def test_execution_context_ordering(
     # is already active and directly launch on the same stream.
     # ========================================================
 
-    with execution_context(
-        DeviceType.NVIDIA,
-        device_id=0,
-    ):
+    with execution_context(DeviceType.NVIDIA, device_id=0):
         # ----------------------------------------------------
         # Native CUDA
         #
         # tmp1 = a + b
         # ----------------------------------------------------
 
-        llaisys.Ops.add(
-            tmp1,
-            a,
-            b,
-        )
+        llaisys.Ops.add(tmp1, a, b)
 
         # ----------------------------------------------------
         # Triton
@@ -137,11 +92,7 @@ def test_execution_context_ordering(
         # tmp2 = tmp1 + b
         # ----------------------------------------------------
 
-        triton_add(
-            tmp2,
-            tmp1,
-            b,
-        )
+        triton_add(tmp2, tmp1, b)
 
         # ----------------------------------------------------
         # Triton again
@@ -149,11 +100,7 @@ def test_execution_context_ordering(
         # tmp3 = tmp2 + b
         # ----------------------------------------------------
 
-        triton_add(
-            tmp3,
-            tmp2,
-            b,
-        )
+        triton_add(tmp3, tmp2, b)
 
         # ----------------------------------------------------
         # Native CUDA again
@@ -161,11 +108,7 @@ def test_execution_context_ordering(
         # out = tmp3 + b
         # ----------------------------------------------------
 
-        llaisys.Ops.add(
-            out,
-            tmp3,
-            b,
-        )
+        llaisys.Ops.add(out, tmp3, b)
 
     # ========================================================
     # First synchronization occurs after the complete chain.
@@ -173,12 +116,7 @@ def test_execution_context_ordering(
     # check_equal performs the final copy/check.
     # ========================================================
 
-    assert check_equal(
-        out,
-        expected,
-        atol=atol,
-        rtol=rtol,
-    )
+    assert check_equal(out, expected, atol=atol, rtol=rtol)
 
 
 # ============================================================
@@ -188,48 +126,13 @@ def test_execution_context_ordering(
 
 if __name__ == "__main__":
     test_cases = [
-        (
-            (2, 3),
-            "f32",
-            1e-5,
-            1e-5,
-        ),
-        (
-            (33, 65),
-            "f32",
-            1e-5,
-            1e-5,
-        ),
-        (
-            (512, 4096),
-            "f32",
-            1e-5,
-            1e-5,
-        ),
-        (
-            (33, 65),
-            "f16",
-            1e-3,
-            1e-3,
-        ),
-        (
-            (512, 4096),
-            "f16",
-            1e-3,
-            1e-3,
-        ),
-        (
-            (33, 65),
-            "bf16",
-            1e-3,
-            1e-3,
-        ),
-        (
-            (512, 4096),
-            "bf16",
-            1e-3,
-            1e-3,
-        ),
+        ((2, 3), "f32", 1e-5, 1e-5),
+        ((33, 65), "f32", 1e-5, 1e-5),
+        ((512, 4096), "f32", 1e-5, 1e-5),
+        ((33, 65), "f16", 1e-3, 1e-3),
+        ((512, 4096), "f16", 1e-3, 1e-3),
+        ((33, 65), "bf16", 1e-3, 1e-3),
+        ((512, 4096), "bf16", 1e-3, 1e-3),
     ]
 
     rounds = 100
@@ -237,18 +140,8 @@ if __name__ == "__main__":
     print("Testing Native -> Triton -> Triton -> Native inside execution context")
 
     for round_idx in range(rounds):
-        for (
-            shape,
-            dtype_name,
-            atol,
-            rtol,
-        ) in test_cases:
-            test_execution_context_ordering(
-                shape,
-                dtype_name,
-                atol,
-                rtol,
-            )
+        for shape, dtype_name, atol, rtol in test_cases:
+            test_execution_context_ordering(shape, dtype_name, atol, rtol)
 
         if (round_idx + 1) % 10 == 0:
             print(f"  completed {round_idx + 1}/{rounds} rounds")

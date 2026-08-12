@@ -7,9 +7,7 @@ def random_tensor(
     shape, dtype_name, device_name, device_id=0, scale=None, bias=None
 ) -> tuple[torch.Tensor, llaisys.Tensor]:
     torch_tensor = torch.rand(
-        shape,
-        dtype=torch_dtype(dtype_name),
-        device=reference_torch_device(device_name, device_id),
+        shape, dtype=torch_dtype(dtype_name), device=reference_torch_device(device_name, device_id)
     )
 
     if scale is not None:
@@ -19,10 +17,7 @@ def random_tensor(
         torch_tensor += bias
 
     llaisys_tensor = llaisys.Tensor(
-        shape,
-        dtype=llaisys_dtype(dtype_name),
-        device=llaisys_device(device_name),
-        device_id=device_id,
+        shape, dtype=llaisys_dtype(dtype_name), device=llaisys_device(device_name), device_id=device_id
     )
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
@@ -30,39 +25,19 @@ def random_tensor(
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
-        llaisys_tensor.data_ptr(),
-        torch_tensor.data_ptr(),
-        bytes_,
-        torch_to_llaisys_memcpy_kind(device_name),
+        llaisys_tensor.data_ptr(), torch_tensor.data_ptr(), bytes_, torch_to_llaisys_memcpy_kind(device_name)
     )
 
     return torch_tensor, llaisys_tensor
 
 
-def random_int_tensor(
-    shape,
-    device_name,
-    dtype_name="i64",
-    device_id=0,
-    low=0,
-    high=2,
-):
+def random_int_tensor(shape, device_name, dtype_name="i64", device_id=0, low=0, high=2):
     torch_tensor = torch.randint(
-        low,
-        high,
-        shape,
-        dtype=torch_dtype(dtype_name),
-        device=reference_torch_device(
-            device_name,
-            device_id,
-        ),
+        low, high, shape, dtype=torch_dtype(dtype_name), device=reference_torch_device(device_name, device_id)
     )
 
     llaisys_tensor = llaisys.Tensor(
-        shape,
-        dtype=llaisys_dtype(dtype_name),
-        device=llaisys_device(device_name),
-        device_id=device_id,
+        shape, dtype=llaisys_dtype(dtype_name), device=llaisys_device(device_name), device_id=device_id
     )
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
@@ -70,35 +45,19 @@ def random_int_tensor(
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
-        llaisys_tensor.data_ptr(),
-        torch_tensor.data_ptr(),
-        bytes_,
-        torch_to_llaisys_memcpy_kind(device_name),
+        llaisys_tensor.data_ptr(), torch_tensor.data_ptr(), bytes_, torch_to_llaisys_memcpy_kind(device_name)
     )
 
     return torch_tensor, llaisys_tensor
 
 
-def zero_tensor(
-    shape,
-    dtype_name,
-    device_name,
-    device_id=0,
-) -> tuple[torch.Tensor, llaisys.Tensor]:
+def zero_tensor(shape, dtype_name, device_name, device_id=0) -> tuple[torch.Tensor, llaisys.Tensor]:
     torch_tensor = torch.zeros(
-        shape,
-        dtype=torch_dtype(dtype_name),
-        device=reference_torch_device(
-            device_name,
-            device_id,
-        ),
+        shape, dtype=torch_dtype(dtype_name), device=reference_torch_device(device_name, device_id)
     )
 
     llaisys_tensor = llaisys.Tensor(
-        shape,
-        dtype=llaisys_dtype(dtype_name),
-        device=llaisys_device(device_name),
-        device_id=device_id,
+        shape, dtype=llaisys_dtype(dtype_name), device=llaisys_device(device_name), device_id=device_id
     )
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
@@ -106,35 +65,17 @@ def zero_tensor(
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
-        llaisys_tensor.data_ptr(),
-        torch_tensor.data_ptr(),
-        bytes_,
-        torch_to_llaisys_memcpy_kind(device_name),
+        llaisys_tensor.data_ptr(), torch_tensor.data_ptr(), bytes_, torch_to_llaisys_memcpy_kind(device_name)
     )
 
     return torch_tensor, llaisys_tensor
 
 
-def arrange_tensor(
-    start,
-    end,
-    device_name,
-    device_id=0,
-) -> tuple[torch.Tensor, llaisys.Tensor]:
-    torch_tensor = torch.arange(
-        start,
-        end,
-        device=reference_torch_device(
-            device_name,
-            device_id,
-        ),
-    )
+def arrange_tensor(start, end, device_name, device_id=0) -> tuple[torch.Tensor, llaisys.Tensor]:
+    torch_tensor = torch.arange(start, end, device=reference_torch_device(device_name, device_id))
 
     llaisys_tensor = llaisys.Tensor(
-        (end - start,),
-        dtype=llaisys_dtype("i64"),
-        device=llaisys_device(device_name),
-        device_id=device_id,
+        (end - start,), dtype=llaisys_dtype("i64"), device=llaisys_device(device_name), device_id=device_id
     )
 
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
@@ -142,22 +83,13 @@ def arrange_tensor(
     bytes_ = torch_tensor.numel() * torch_tensor.element_size()
 
     api.memcpy_sync(
-        llaisys_tensor.data_ptr(),
-        torch_tensor.data_ptr(),
-        bytes_,
-        torch_to_llaisys_memcpy_kind(device_name),
+        llaisys_tensor.data_ptr(), torch_tensor.data_ptr(), bytes_, torch_to_llaisys_memcpy_kind(device_name)
     )
 
     return torch_tensor, llaisys_tensor
 
 
-def check_equal(
-    llaisys_result: llaisys.Tensor,
-    torch_answer: torch.Tensor,
-    atol=1e-5,
-    rtol=1e-5,
-    strict=False,
-):
+def check_equal(llaisys_result: llaisys.Tensor, torch_answer: torch.Tensor, atol=1e-5, rtol=1e-5, strict=False):
     shape = llaisys_result.shape()
     strides = llaisys_result.strides()
 
@@ -178,17 +110,10 @@ def check_equal(
     tmp = torch.zeros(
         (right + 1,),
         dtype=torch_answer.dtype,
-        device=reference_torch_device(
-            result_device_name,
-            llaisys_result.device_id(),
-        ),
+        device=reference_torch_device(result_device_name, llaisys_result.device_id()),
     )
 
-    result = torch.as_strided(
-        tmp,
-        shape,
-        strides,
-    )
+    result = torch.as_strided(tmp, shape, strides)
 
     api = llaisys.RuntimeAPI(llaisys_result.device_type())
 
@@ -210,12 +135,7 @@ def check_equal(
             return True
 
     else:
-        close_mask = torch.isclose(
-            result,
-            torch_answer,
-            atol=atol,
-            rtol=rtol,
-        )
+        close_mask = torch.isclose(result, torch_answer, atol=atol, rtol=rtol)
 
         if torch.all(close_mask):
             return True
@@ -232,10 +152,7 @@ def check_equal(
 
     abs_error = torch.abs(result_f32 - answer_f32)
 
-    denominator = torch.clamp(
-        torch.abs(answer_f32),
-        min=1e-12,
-    )
+    denominator = torch.clamp(torch.abs(answer_f32), min=1e-12)
 
     rel_error = abs_error / denominator
 
@@ -261,11 +178,7 @@ def check_equal(
     # torch.isclose(), rather than all elements.
     # ========================================================
 
-    mismatch_abs_error = torch.where(
-        mismatch_mask,
-        abs_error,
-        torch.zeros_like(abs_error),
-    )
+    mismatch_abs_error = torch.where(mismatch_mask, abs_error, torch.zeros_like(abs_error))
 
     flat_error = mismatch_abs_error.reshape(-1)
 
@@ -361,13 +274,7 @@ def check_equal(
     return False
 
 
-def _benchmark_function(
-    func,
-    synchronize,
-    warmup=10,
-    repeat=100,
-    rounds=10,
-):
+def _benchmark_function(func, synchronize, warmup=10, repeat=100, rounds=10):
     import statistics
     import time
 
@@ -404,26 +311,13 @@ def _benchmark_function(
     }
 
 
-def benchmark_llaisys(
-    llaisys_func,
-    device_name,
-    warmup=10,
-    repeat=100,
-    rounds=10,
-    label=None,
-):
+def benchmark_llaisys(llaisys_func, device_name, warmup=10, repeat=100, rounds=10, label=None):
     api = llaisys.RuntimeAPI(llaisys_device(device_name))
 
     def synchronize():
         api.device_synchronize()
 
-    stats = _benchmark_function(
-        llaisys_func,
-        synchronize,
-        warmup=warmup,
-        repeat=repeat,
-        rounds=rounds,
-    )
+    stats = _benchmark_function(llaisys_func, synchronize, warmup=warmup, repeat=repeat, rounds=rounds)
 
     prefix = f"{label}: " if label is not None else ""
 
@@ -439,28 +333,12 @@ def benchmark_llaisys(
     return stats
 
 
-def benchmark(
-    torch_func,
-    llaisys_func,
-    device_name,
-    warmup=10,
-    repeat=100,
-    rounds=10,
-):
-    llaisys_stats = benchmark_llaisys(
-        llaisys_func,
-        device_name,
-        warmup=warmup,
-        repeat=repeat,
-        rounds=rounds,
-    )
+def benchmark(torch_func, llaisys_func, device_name, warmup=10, repeat=100, rounds=10):
+    llaisys_stats = benchmark_llaisys(llaisys_func, device_name, warmup=warmup, repeat=repeat, rounds=rounds)
 
     if device_name == "metax":
         print("        Torch comparison skipped: the reference tensor is on CPU.")
-        return {
-            "torch": None,
-            "llaisys": llaisys_stats,
-        }
+        return {"torch": None, "llaisys": llaisys_stats}
 
     if device_name == "cpu":
 
@@ -475,22 +353,13 @@ def benchmark(
     else:
         raise ValueError(f"Unsupported benchmark device: {device_name}")
 
-    torch_stats = _benchmark_function(
-        torch_func,
-        torch_synchronize,
-        warmup=warmup,
-        repeat=repeat,
-        rounds=rounds,
-    )
+    torch_stats = _benchmark_function(torch_func, torch_synchronize, warmup=warmup, repeat=repeat, rounds=rounds)
 
     print(f"        Torch {device_name}: median={torch_stats['median_ms']:.5f} ms")
 
     print(f"        Speedup: {torch_stats['median_ms'] / llaisys_stats['median_ms']:.3f}x")
 
-    return {
-        "torch": torch_stats,
-        "llaisys": llaisys_stats,
-    }
+    return {"torch": torch_stats, "llaisys": llaisys_stats}
 
 
 def torch_device(device_name: str, device_id=0):

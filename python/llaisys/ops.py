@@ -20,10 +20,7 @@ class Ops:
     @staticmethod
     def linear(out, inp, weight, bias=None):
         LIB_LLAISYS.llaisysLinear(
-            out.lib_tensor(),
-            inp.lib_tensor(),
-            weight.lib_tensor(),
-            None if bias is None else bias.lib_tensor(),
+            out.lib_tensor(), inp.lib_tensor(), weight.lib_tensor(), None if bias is None else bias.lib_tensor()
         )
 
     @staticmethod
@@ -41,11 +38,7 @@ class Ops:
     @staticmethod
     def self_attention(attn_val: Tensor, q: Tensor, k: Tensor, v: Tensor, scale: float):
         LIB_LLAISYS.llaisysSelfAttention(
-            attn_val.lib_tensor(),
-            q.lib_tensor(),
-            k.lib_tensor(),
-            v.lib_tensor(),
-            c_float(scale),
+            attn_val.lib_tensor(), q.lib_tensor(), k.lib_tensor(), v.lib_tensor(), c_float(scale)
         )
 
     @staticmethod

@@ -71,12 +71,7 @@ def add(c, a, b):
 
     block_size = config["BLOCK_SIZE"]
 
-    grid = (
-        triton.cdiv(
-            numel,
-            block_size,
-        ),
-    )
+    grid = (triton.cdiv(numel, block_size),)
 
     # ============================================================
     # Triton wrappers
@@ -109,31 +104,11 @@ def add(c, a, b):
     # calls remain correct.
     # ============================================================
 
-    if _nvidia_backend.in_execution_context(
-        stream_ptr,
-        c_device_id,
-    ):
-        add_kernel[grid](
-            c_triton,
-            a_triton,
-            b_triton,
-            numel,
-            BLOCK_SIZE=block_size,
-            num_warps=config["num_warps"],
-        )
+    if _nvidia_backend.in_execution_context(stream_ptr, c_device_id):
+        add_kernel[grid](c_triton, a_triton, b_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"])
 
     else:
-        with _nvidia_backend.stream_context(
-            stream_ptr,
-            c_device_id,
-        ):
-            add_kernel[grid](
-                c_triton,
-                a_triton,
-                b_triton,
-                numel,
-                BLOCK_SIZE=block_size,
-                num_warps=config["num_warps"],
-            )
+        with _nvidia_backend.stream_context(stream_ptr, c_device_id):
+            add_kernel[grid](c_triton, a_triton, b_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"])
 
     return c

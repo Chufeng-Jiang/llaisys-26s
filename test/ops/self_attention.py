@@ -30,16 +30,7 @@ def torch_self_attention(attn_val, query, key, value, scale):
 
 
 def test_op_self_attention(
-    qlen,
-    kvlen,
-    nh,
-    nkvh,
-    hd,
-    dtype_name="f32",
-    atol=1e-5,
-    rtol=1e-5,
-    device_name="cpu",
-    profile=False,
+    qlen, kvlen, nh, nkvh, hd, dtype_name="f32", atol=1e-5, rtol=1e-5, device_name="cpu", profile=False
 ):
     print(f"   qlen={qlen} kvlen={kvlen} nh={nh} nkvh={nkvh} hd={hd} dtype <{dtype_name}>")
     q, q_ = random_tensor((qlen, nh, hd), dtype_name, device_name)

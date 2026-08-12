@@ -44,35 +44,19 @@ class RuntimeAPI:
     def free_host(self, ptr: c_void_p) -> None:
         self._api.contents.free_host(ptr)
 
-    def memcpy_sync(
-        self,
-        dst: c_void_p,
-        src: c_void_p,
-        size: int,
-        kind: libllaisys.MemcpyKind,
-    ) -> None:
+    def memcpy_sync(self, dst: c_void_p, src: c_void_p, size: int, kind: libllaisys.MemcpyKind) -> None:
         self._api.contents.memcpy_sync(dst, src, size, libllaisys.llaisysMemcpyKind_t(kind))
 
     def memcpy_async(
-        self,
-        dst: c_void_p,
-        src: c_void_p,
-        size: int,
-        kind: libllaisys.MemcpyKind,
-        stream: libllaisys.llaisysStream_t,
+        self, dst: c_void_p, src: c_void_p, size: int, kind: libllaisys.MemcpyKind, stream: libllaisys.llaisysStream_t
     ) -> None:
         self._api.contents.memcpy_async(dst, src, size, libllaisys.llaisysMemcpyKind_t(kind), stream)
 
-    def get_context_stream(
-        self,
-        device_id: int = 0,
-    ) -> int:
+    def get_context_stream(self, device_id: int = 0) -> int:
         stream = libllaisys.llaisysStream_t()
 
         status = LIB_LLAISYS.llaisysGetContextStream(
-            libllaisys.llaisysDeviceType_t(self._device_type),
-            device_id,
-            byref(stream),
+            libllaisys.llaisysDeviceType_t(self._device_type), device_id, byref(stream)
         )
 
         if status != 0:

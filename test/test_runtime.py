@@ -31,42 +31,18 @@ def test_memcpy(api, size_bytes: int):
     device_b = api.malloc_device(size_bytes)
 
     # a -> device_a
-    api.memcpy_sync(
-        device_a,
-        a.data_ptr(),
-        size_bytes,
-        llaisys.MemcpyKind.H2D,
-    )
+    api.memcpy_sync(device_a, a.data_ptr(), size_bytes, llaisys.MemcpyKind.H2D)
     # device_a -> device_b
-    api.memcpy_sync(
-        device_b,
-        device_a,
-        size_bytes,
-        llaisys.MemcpyKind.D2D,
-    )
+    api.memcpy_sync(device_b, device_a, size_bytes, llaisys.MemcpyKind.D2D)
     # device_b -> b
-    api.memcpy_sync(
-        b.data_ptr(),
-        device_b,
-        size_bytes,
-        llaisys.MemcpyKind.D2H,
-    )
+    api.memcpy_sync(b.data_ptr(), device_b, size_bytes, llaisys.MemcpyKind.D2H)
 
     torch.testing.assert_close(a, b)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=[
-            "cpu",
-            "nvidia",
-            "metax",
-        ],
-        type=str,
-    )
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
     args = parser.parse_args()
     test_basic_runtime_api(args.device)
 

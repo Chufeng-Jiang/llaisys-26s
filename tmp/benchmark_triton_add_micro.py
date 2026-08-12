@@ -11,15 +11,9 @@ import triton
 
 repo_root = Path(__file__).resolve().parents[1]
 
-sys.path.insert(
-    0,
-    str(repo_root / "python"),
-)
+sys.path.insert(0, str(repo_root / "python"))
 
-sys.path.insert(
-    0,
-    str(repo_root / "test"),
-)
+sys.path.insert(0, str(repo_root / "test"))
 
 
 # ============================================================
@@ -53,13 +47,7 @@ import llaisys
 # ============================================================
 
 
-def benchmark_host_latency(
-    func,
-    synchronize,
-    warmup=20,
-    repeat=100,
-    rounds=10,
-):
+def benchmark_host_latency(func, synchronize, warmup=20, repeat=100, rounds=10):
     for _ in range(warmup):
         func()
 
@@ -103,12 +91,7 @@ def benchmark_host_latency(
 # ============================================================
 
 
-def benchmark_cpu_component(
-    func,
-    warmup=200,
-    repeat=10000,
-    rounds=7,
-):
+def benchmark_cpu_component(func, warmup=200, repeat=10000, rounds=7):
     for _ in range(warmup):
         func()
 
@@ -150,23 +133,14 @@ def benchmark_cpu_component(
 # ============================================================
 
 
-def benchmark_stream_bridge(
-    runtime,
-    backend,
-    device_id,
-):
+def benchmark_stream_bridge(runtime, backend, device_id):
     def bridge_once():
         stream_ptr = runtime.get_context_stream(device_id)
 
-        with backend.stream_context(
-            stream_ptr,
-            device_id,
-        ):
+        with backend.stream_context(stream_ptr, device_id):
             pass
 
-    return benchmark_cpu_component(
-        bridge_once,
-    )
+    return benchmark_cpu_component(bridge_once)
 
 
 # ============================================================
@@ -174,10 +148,7 @@ def benchmark_stream_bridge(
 # ============================================================
 
 
-def benchmark_add(
-    shape,
-    dtype_name,
-):
+def benchmark_add(shape, dtype_name):
     print()
     print("============================================================")
 
@@ -189,35 +160,15 @@ def benchmark_add(
     # Create tensors
     # ========================================================
 
-    _, a = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, a = random_tensor(shape, dtype_name, "nvidia")
 
-    _, b = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, b = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_native = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_native = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_integrated = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_integrated = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_prebound = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_prebound = random_tensor(shape, dtype_name, "nvidia")
 
     device_id = c_native.device_id()
 
@@ -238,16 +189,9 @@ def benchmark_add(
     # ========================================================
 
     def native_op():
-        llaisys.Ops.add(
-            c_native,
-            a,
-            b,
-        )
+        llaisys.Ops.add(c_native, a, b)
 
-    native_result = benchmark_host_latency(
-        native_op,
-        runtime.device_synchronize,
-    )
+    native_result = benchmark_host_latency(native_op, runtime.device_synchronize)
 
     # ========================================================
     # B. Triton fully integrated Add
@@ -267,16 +211,9 @@ def benchmark_add(
     # ========================================================
 
     def triton_integrated_op():
-        triton_add(
-            c_integrated,
-            a,
-            b,
-        )
+        triton_add(c_integrated, a, b)
 
-    integrated_result = benchmark_host_latency(
-        triton_integrated_op,
-        runtime.device_synchronize,
-    )
+    integrated_result = benchmark_host_latency(triton_integrated_op, runtime.device_synchronize)
 
     # ========================================================
     # C. Prepare Triton pre-bound path
@@ -291,12 +228,7 @@ def benchmark_add(
 
     block_size = config["BLOCK_SIZE"]
 
-    grid = (
-        triton.cdiv(
-            numel,
-            block_size,
-        ),
-    )
+    grid = (triton.cdiv(numel, block_size),)
 
     c_prebound_triton = as_nvidia_triton_tensor(c_prebound)
 
@@ -321,22 +253,11 @@ def benchmark_add(
 
     def triton_prebound_op():
         add_kernel[grid](
-            c_prebound_triton,
-            a_triton,
-            b_triton,
-            numel,
-            BLOCK_SIZE=block_size,
-            num_warps=config["num_warps"],
+            c_prebound_triton, a_triton, b_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"]
         )
 
-    with backend.stream_context(
-        stream_ptr,
-        device_id,
-    ):
-        prebound_result = benchmark_host_latency(
-            triton_prebound_op,
-            runtime.device_synchronize,
-        )
+    with backend.stream_context(stream_ptr, device_id):
+        prebound_result = benchmark_host_latency(triton_prebound_op, runtime.device_synchronize)
 
     # Make sure all previous GPU work has completed before
     # measuring host-only components.
@@ -391,9 +312,7 @@ def benchmark_add(
 
         return local_numel
 
-    metadata_result = benchmark_cpu_component(
-        metadata_only,
-    )
+    metadata_result = benchmark_cpu_component(metadata_only)
 
     # ========================================================
     # F. TritonTensor wrappers
@@ -415,9 +334,7 @@ def benchmark_add(
 
         as_nvidia_triton_tensor(b)
 
-    wrapper_result = benchmark_cpu_component(
-        wrapper_only,
-    )
+    wrapper_result = benchmark_cpu_component(wrapper_only)
 
     # ========================================================
     # G. get_context_stream()
@@ -426,9 +343,7 @@ def benchmark_add(
     def get_stream_only():
         runtime.get_context_stream(device_id)
 
-    get_stream_result = benchmark_cpu_component(
-        get_stream_only,
-    )
+    get_stream_result = benchmark_cpu_component(get_stream_only)
 
     # ========================================================
     # H. Cached stream context enter / exit
@@ -437,32 +352,20 @@ def benchmark_add(
     cached_stream_ptr = runtime.get_context_stream(device_id)
 
     # Warm ExternalStream cache.
-    with backend.stream_context(
-        cached_stream_ptr,
-        device_id,
-    ):
+    with backend.stream_context(cached_stream_ptr, device_id):
         pass
 
     def context_only():
-        with backend.stream_context(
-            cached_stream_ptr,
-            device_id,
-        ):
+        with backend.stream_context(cached_stream_ptr, device_id):
             pass
 
-    context_result = benchmark_cpu_component(
-        context_only,
-    )
+    context_result = benchmark_cpu_component(context_only)
 
     # ========================================================
     # I. Full stream bridge
     # ========================================================
 
-    bridge_result = benchmark_stream_bridge(
-        runtime,
-        backend,
-        device_id,
-    )
+    bridge_result = benchmark_stream_bridge(runtime, backend, device_id)
 
     # ========================================================
     # J. Tensor accessor microbenchmarks
@@ -499,25 +402,15 @@ def benchmark_add(
     def data_ptr_only():
         return c_integrated.data_ptr()
 
-    shape_result = benchmark_cpu_component(
-        shape_only,
-    )
+    shape_result = benchmark_cpu_component(shape_only)
 
-    dtype_result = benchmark_cpu_component(
-        dtype_only,
-    )
+    dtype_result = benchmark_cpu_component(dtype_only)
 
-    device_type_result = benchmark_cpu_component(
-        device_type_only,
-    )
+    device_type_result = benchmark_cpu_component(device_type_only)
 
-    device_id_result = benchmark_cpu_component(
-        device_id_only,
-    )
+    device_id_result = benchmark_cpu_component(device_id_only)
 
-    data_ptr_result = benchmark_cpu_component(
-        data_ptr_only,
-    )
+    data_ptr_result = benchmark_cpu_component(data_ptr_only)
 
     # ========================================================
     # Convert operator results to microseconds
@@ -673,10 +566,7 @@ if __name__ == "__main__":
     results = []
 
     for shape, dtype_name in test_cases:
-        result = benchmark_add(
-            shape,
-            dtype_name,
-        )
+        result = benchmark_add(shape, dtype_name)
 
         results.append(result)
 

@@ -11,15 +11,9 @@ import triton
 
 repo_root = Path(__file__).resolve().parents[1]
 
-sys.path.insert(
-    0,
-    str(repo_root / "python"),
-)
+sys.path.insert(0, str(repo_root / "python"))
 
-sys.path.insert(
-    0,
-    str(repo_root / "test"),
-)
+sys.path.insert(0, str(repo_root / "test"))
 
 
 # ============================================================
@@ -54,13 +48,7 @@ import llaisys
 # ============================================================
 
 
-def benchmark_host_latency(
-    func,
-    synchronize,
-    warmup=20,
-    repeat=100,
-    rounds=10,
-):
+def benchmark_host_latency(func, synchronize, warmup=20, repeat=100, rounds=10):
     # --------------------------------------------------------
     # Warmup
     # --------------------------------------------------------
@@ -105,10 +93,7 @@ def benchmark_host_latency(
 # ============================================================
 
 
-def benchmark_case(
-    shape,
-    dtype_name,
-):
+def benchmark_case(shape, dtype_name):
     print()
     print("============================================================")
 
@@ -120,41 +105,17 @@ def benchmark_case(
     # Create tensors
     # ========================================================
 
-    _, a = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, a = random_tensor(shape, dtype_name, "nvidia")
 
-    _, b = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, b = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_native = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_native = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_current = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_current = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_execution_context = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_execution_context = random_tensor(shape, dtype_name, "nvidia")
 
-    _, c_prebound = random_tensor(
-        shape,
-        dtype_name,
-        "nvidia",
-    )
+    _, c_prebound = random_tensor(shape, dtype_name, "nvidia")
 
     device_id = c_native.device_id()
 
@@ -178,16 +139,9 @@ def benchmark_case(
     # ========================================================
 
     def native_op():
-        llaisys.Ops.add(
-            c_native,
-            a,
-            b,
-        )
+        llaisys.Ops.add(c_native, a, b)
 
-    native_result = benchmark_host_latency(
-        native_op,
-        runtime.device_synchronize,
-    )
+    native_result = benchmark_host_latency(native_op, runtime.device_synchronize)
 
     # ========================================================
     # B. Current standalone Triton Add
@@ -207,16 +161,9 @@ def benchmark_case(
     # ========================================================
 
     def current_op():
-        triton_add(
-            c_current,
-            a,
-            b,
-        )
+        triton_add(c_current, a, b)
 
-    current_result = benchmark_host_latency(
-        current_op,
-        runtime.device_synchronize,
-    )
+    current_result = benchmark_host_latency(current_op, runtime.device_synchronize)
 
     # ========================================================
     # C. Formal execution-context Triton Add
@@ -243,20 +190,10 @@ def benchmark_case(
     # ========================================================
 
     def execution_context_op():
-        triton_add(
-            c_execution_context,
-            a,
-            b,
-        )
+        triton_add(c_execution_context, a, b)
 
-    with execution_context(
-        DeviceType.NVIDIA,
-        device_id=device_id,
-    ):
-        execution_context_result = benchmark_host_latency(
-            execution_context_op,
-            runtime.device_synchronize,
-        )
+    with execution_context(DeviceType.NVIDIA, device_id=device_id):
+        execution_context_result = benchmark_host_latency(execution_context_op, runtime.device_synchronize)
 
     # ========================================================
     # D. Pre-bound Triton reference
@@ -291,12 +228,7 @@ def benchmark_case(
 
     block_size = config["BLOCK_SIZE"]
 
-    grid = (
-        triton.cdiv(
-            numel,
-            block_size,
-        ),
-    )
+    grid = (triton.cdiv(numel, block_size),)
 
     c_prebound_triton = as_nvidia_triton_tensor(c_prebound)
 
@@ -306,22 +238,11 @@ def benchmark_case(
 
     def prebound_op():
         add_kernel[grid](
-            c_prebound_triton,
-            a_triton,
-            b_triton,
-            numel,
-            BLOCK_SIZE=block_size,
-            num_warps=config["num_warps"],
+            c_prebound_triton, a_triton, b_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"]
         )
 
-    with backend.stream_context(
-        stream_ptr,
-        device_id,
-    ):
-        prebound_result = benchmark_host_latency(
-            prebound_op,
-            runtime.device_synchronize,
-        )
+    with backend.stream_context(stream_ptr, device_id):
+        prebound_result = benchmark_host_latency(prebound_op, runtime.device_synchronize)
 
     # ========================================================
     # Extract results
@@ -410,10 +331,7 @@ if __name__ == "__main__":
     results = []
 
     for shape, dtype_name in test_cases:
-        result = benchmark_case(
-            shape,
-            dtype_name,
-        )
+        result = benchmark_case(shape, dtype_name)
 
         results.append(result)
 

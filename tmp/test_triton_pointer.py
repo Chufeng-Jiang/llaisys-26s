@@ -2,12 +2,7 @@ from llaisys.libllaisys import DataType, DeviceType
 from llaisys.tensor import Tensor
 from llaisys.triton.tensor import as_nvidia_triton_tensor
 
-x = Tensor(
-    shape=(2, 3),
-    dtype=DataType.F32,
-    device=DeviceType.NVIDIA,
-    device_id=0,
-)
+x = Tensor(shape=(2, 3), dtype=DataType.F32, device=DeviceType.NVIDIA, device_id=0)
 
 print("LLAISYS Tensor:")
 print("  shape:", x.shape())

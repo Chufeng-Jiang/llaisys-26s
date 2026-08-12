@@ -12,18 +12,11 @@ def get_last_error(lib) -> str:
     if not message:
         return "Unknown LLAISYS error"
 
-    return message.decode(
-        "utf-8",
-        errors="replace",
-    )
+    return message.decode("utf-8", errors="replace")
 
 
 def make_status_checker(lib):
-    def check_status(
-        result,
-        func,
-        arguments,
-    ):
+    def check_status(result, func, arguments):
         if result == 0:
             return result
 
@@ -33,11 +26,7 @@ def make_status_checker(lib):
 
 
 def make_handle_checker(lib):
-    def check_handle(
-        result,
-        func,
-        arguments,
-    ):
+    def check_handle(result, func, arguments):
         if result:
             return result
 

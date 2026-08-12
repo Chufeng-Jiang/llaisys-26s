@@ -1,12 +1,5 @@
 import ctypes
-from ctypes import (
-    CFUNCTYPE,
-    POINTER,
-    Structure,
-    c_int,
-    c_size_t,
-    c_void_p,
-)
+from ctypes import CFUNCTYPE, POINTER, Structure, c_int, c_size_t, c_void_p
 
 from .llaisys_types import *
 
@@ -54,9 +47,5 @@ def load_runtime(lib):
 
     lib.llaisysSetContextRuntime.argtypes = [llaisysDeviceType_t, c_int]
     lib.llaisysSetContextRuntime.restype = c_int
-    lib.llaisysGetContextStream.argtypes = [
-        llaisysDeviceType_t,
-        c_int,
-        POINTER(llaisysStream_t),
-    ]
+    lib.llaisysGetContextStream.argtypes = [llaisysDeviceType_t, c_int, POINTER(llaisysStream_t)]
     lib.llaisysGetContextStream.restype = c_int

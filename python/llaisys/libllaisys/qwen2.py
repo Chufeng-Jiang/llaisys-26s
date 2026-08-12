@@ -1,16 +1,6 @@
-from ctypes import (
-    POINTER,
-    Structure,
-    c_float,
-    c_int,
-    c_int64,
-    c_size_t,
-)
+from ctypes import POINTER, Structure, c_float, c_int, c_int64, c_size_t
 
-from .llaisys_types import (
-    llaisysDataType_t,
-    llaisysDeviceType_t,
-)
+from .llaisys_types import llaisysDataType_t, llaisysDeviceType_t
 from .tensor import llaisysTensor_t
 
 
@@ -59,37 +49,22 @@ llaisysQwen2Model_t = POINTER(LlaisysQwen2Model)
 
 
 def load_qwen2(lib):
-    lib.llaisysQwen2ModelCreate.argtypes = [
-        POINTER(LlaisysQwen2Meta),
-        llaisysDeviceType_t,
-        POINTER(c_int),
-        c_int,
-    ]
+    lib.llaisysQwen2ModelCreate.argtypes = [POINTER(LlaisysQwen2Meta), llaisysDeviceType_t, POINTER(c_int), c_int]
 
     lib.llaisysQwen2ModelCreate.restype = llaisysQwen2Model_t
 
-    lib.llaisysQwen2ModelDestroy.argtypes = [
-        llaisysQwen2Model_t,
-    ]
+    lib.llaisysQwen2ModelDestroy.argtypes = [llaisysQwen2Model_t]
 
     lib.llaisysQwen2ModelDestroy.restype = None
 
-    lib.llaisysQwen2ModelWeights.argtypes = [
-        llaisysQwen2Model_t,
-    ]
+    lib.llaisysQwen2ModelWeights.argtypes = [llaisysQwen2Model_t]
 
     lib.llaisysQwen2ModelWeights.restype = POINTER(LlaisysQwen2Weights)
 
-    lib.llaisysQwen2ModelReset.argtypes = [
-        llaisysQwen2Model_t,
-    ]
+    lib.llaisysQwen2ModelReset.argtypes = [llaisysQwen2Model_t]
 
     lib.llaisysQwen2ModelReset.restype = None
 
-    lib.llaisysQwen2ModelInfer.argtypes = [
-        llaisysQwen2Model_t,
-        POINTER(c_int64),
-        c_size_t,
-    ]
+    lib.llaisysQwen2ModelInfer.argtypes = [llaisysQwen2Model_t, POINTER(c_int64), c_size_t]
 
     lib.llaisysQwen2ModelInfer.restype = c_int64

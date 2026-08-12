@@ -1,20 +1,11 @@
 import os
 import sys
 
-parent_dir = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-    )
-)
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
 import torch
-from test_utils import (
-    benchmark_llaisys,
-    check_equal,
-    random_tensor,
-)
+from test_utils import benchmark_llaisys, check_equal, random_tensor
 
 import llaisys
 
@@ -38,56 +29,24 @@ def torch_swiglu(out, gate, up):
     out.copy_(result.to(out.dtype))
 
 
-def test_op_swiglu(
-    shape,
-    dtype_name="f32",
-    atol=1e-5,
-    rtol=1e-5,
-    device_name="cpu",
-    profile=False,
-):
+def test_op_swiglu(shape, dtype_name="f32", atol=1e-5, rtol=1e-5, device_name="cpu", profile=False):
     print(f"   shape {shape} dtype <{dtype_name}>")
 
-    gate, gate_ = random_tensor(
-        shape,
-        dtype_name,
-        device_name,
-    )
+    gate, gate_ = random_tensor(shape, dtype_name, device_name)
 
-    up, up_ = random_tensor(
-        shape,
-        dtype_name,
-        device_name,
-    )
+    up, up_ = random_tensor(shape, dtype_name, device_name)
 
-    out, out_ = random_tensor(
-        shape,
-        dtype_name,
-        device_name,
-    )
+    out, out_ = random_tensor(shape, dtype_name, device_name)
 
     # ========================================================
     # Correctness reference
     # ========================================================
 
-    torch_swiglu(
-        out,
-        gate,
-        up,
-    )
+    torch_swiglu(out, gate, up)
 
-    llaisys.Ops.swiglu(
-        out_,
-        gate_,
-        up_,
-    )
+    llaisys.Ops.swiglu(out_, gate_, up_)
 
-    assert check_equal(
-        out_,
-        out,
-        atol=atol,
-        rtol=rtol,
-    )
+    assert check_equal(out_, out, atol=atol, rtol=rtol)
 
     # ========================================================
     # LLAISYS profiling
@@ -95,11 +54,7 @@ def test_op_swiglu(
 
     if profile:
         benchmark_llaisys(
-            lambda: llaisys.Ops.swiglu(
-                out_,
-                gate_,
-                up_,
-            ),
+            lambda: llaisys.Ops.swiglu(out_, gate_, up_),
             device_name,
             label=(f"SwiGLU shape={shape} dtype={dtype_name}"),
         )
@@ -110,28 +65,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=[
-            "cpu",
-            "nvidia",
-            "metax",
-        ],
-        type=str,
-    )
+    parser.add_argument("--device", default="cpu", choices=["cpu", "nvidia", "metax"], type=str)
 
-    parser.add_argument(
-        "--profile",
-        action="store_true",
-    )
+    parser.add_argument("--profile", action="store_true")
 
     args = parser.parse_args()
 
-    test_shapes = [
-        (2, 3),
-        (512, 4096),
-    ]
+    test_shapes = [(2, 3), (512, 4096)]
 
     test_dtype_prec = [
         # dtype, atol, rtol
@@ -144,13 +84,6 @@ if __name__ == "__main__":
 
     for shape in test_shapes:
         for dtype_name, atol, rtol in test_dtype_prec:
-            test_op_swiglu(
-                shape,
-                dtype_name,
-                atol,
-                rtol,
-                args.device,
-                args.profile,
-            )
+            test_op_swiglu(shape, dtype_name, atol, rtol, args.device, args.profile)
 
     print("\033[92mTest passed!\033[0m\n")

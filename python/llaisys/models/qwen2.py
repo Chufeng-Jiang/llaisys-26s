@@ -5,12 +5,7 @@ import struct
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..libllaisys import (
-    LIB_LLAISYS,
-    DataType,
-    DeviceType,
-    LlaisysQwen2Meta,
-)
+from ..libllaisys import LIB_LLAISYS, DataType, DeviceType, LlaisysQwen2Meta
 
 
 class Qwen2:
@@ -22,11 +17,7 @@ class Qwen2:
         "I32": (DataType.I32, 4),
     }
 
-    def __init__(
-        self,
-        model_path,
-        device: DeviceType = DeviceType.CPU,
-    ):
+    def __init__(self, model_path, device: DeviceType = DeviceType.CPU):
         self.model_path = Path(model_path)
 
         self._model = None
@@ -43,10 +34,7 @@ class Qwen2:
         if not config_path.is_file():
             raise FileNotFoundError(f"Qwen2 config.json not found: {config_path}")
 
-        with config_path.open(
-            "r",
-            encoding="utf-8",
-        ) as file:
+        with config_path.open("r", encoding="utf-8") as file:
             self.config = json.load(file)
 
         self.device = DeviceType(device)
@@ -65,10 +53,7 @@ class Qwen2:
 
         head_dim = int(self.config.get("head_dim") or hidden_size // num_attention_heads)
 
-        eos_token_id = self.config.get(
-            "eos_token_id",
-            -1,
-        )
+        eos_token_id = self.config.get("eos_token_id", -1)
 
         if isinstance(eos_token_id, list):
             if not eos_token_id:
@@ -87,12 +72,7 @@ class Qwen2:
             maxseq=int(self.config["max_position_embeddings"]),
             voc=int(self.config["vocab_size"]),
             epsilon=float(self.config["rms_norm_eps"]),
-            theta=float(
-                self.config.get(
-                    "rope_theta",
-                    10000.0,
-                )
-            ),
+            theta=float(self.config.get("rope_theta", 10000.0)),
             end_token=int(eos_token_id),
         )
 
@@ -113,10 +93,7 @@ class Qwen2:
 
     def _create_backend_model(self):
         self._model = LIB_LLAISYS.llaisysQwen2ModelCreate(
-            ctypes.byref(self.meta),
-            int(self.device),
-            self._device_ids,
-            1,
+            ctypes.byref(self.meta), int(self.device), self._device_ids, 1
         )
 
         if not self._model:
@@ -158,10 +135,7 @@ class Qwen2:
             if len(header_length_bytes) != 8:
                 raise RuntimeError(f"Invalid safetensors file: {file_path}")
 
-            header_length = struct.unpack(
-                "<Q",
-                header_length_bytes,
-            )[0]
+            header_length = struct.unpack("<Q", header_length_bytes)[0]
 
             header_bytes = file.read(header_length)
 
@@ -197,18 +171,9 @@ class Qwen2:
 
     def _build_weight_targets(self):
         targets = {
-            "model.embed_tokens.weight": (
-                "in_embed",
-                None,
-            ),
-            "lm_head.weight": (
-                "out_embed",
-                None,
-            ),
-            "model.norm.weight": (
-                "out_norm_w",
-                None,
-            ),
+            "model.embed_tokens.weight": ("in_embed", None),
+            "lm_head.weight": ("out_embed", None),
+            "model.norm.weight": ("out_norm_w", None),
         }
 
         layer_fields = {
@@ -230,10 +195,7 @@ class Qwen2:
             prefix = f"model.layers.{layer_index}."
 
             for suffix, field_name in layer_fields.items():
-                targets[prefix + suffix] = (
-                    field_name,
-                    layer_index,
-                )
+                targets[prefix + suffix] = (field_name, layer_index)
 
         return targets
 
@@ -246,12 +208,7 @@ class Qwen2:
 
         return result
 
-    def _create_tensor_from_mmap(
-        self,
-        mapped,
-        tensor_name,
-        tensor_info,
-    ):
+    def _create_tensor_from_mmap(self, mapped, tensor_name, tensor_info):
         safetensors_dtype = tensor_info["dtype"]
 
         if safetensors_dtype not in self._SAFETENSORS_DTYPES:
@@ -289,11 +246,7 @@ class Qwen2:
         shape = ShapeArray(*shape_values)
 
         tensor = LIB_LLAISYS.tensorCreate(
-            shape,
-            len(shape_values),
-            int(llaisys_dtype),
-            int(self.device),
-            self.device_id,
+            shape, len(shape_values), int(llaisys_dtype), int(self.device), self.device_id
         )
 
         if not tensor:
@@ -303,17 +256,11 @@ class Qwen2:
         raw_pointer = None
 
         try:
-            raw_byte = ctypes.c_ubyte.from_buffer(
-                mapped,
-                absolute_start,
-            )
+            raw_byte = ctypes.c_ubyte.from_buffer(mapped, absolute_start)
 
             raw_pointer = ctypes.c_void_p(ctypes.addressof(raw_byte))
 
-            LIB_LLAISYS.tensorLoad(
-                tensor,
-                raw_pointer,
-            )
+            LIB_LLAISYS.tensorLoad(tensor, raw_pointer)
 
         except Exception:
             LIB_LLAISYS.tensorDestroy(tensor)
@@ -329,25 +276,13 @@ class Qwen2:
 
         return tensor
 
-    def _assign_weight(
-        self,
-        field_name,
-        layer_index,
-        tensor,
-    ):
+    def _assign_weight(self, field_name, layer_index, tensor):
         if layer_index is None:
-            setattr(
-                self._weights,
-                field_name,
-                tensor,
-            )
+            setattr(self._weights, field_name, tensor)
 
             return
 
-        field_pointer = getattr(
-            self._weights,
-            field_name,
-        )
+        field_pointer = getattr(self._weights, field_name)
 
         field_pointer[layer_index] = tensor
 
@@ -368,72 +303,38 @@ class Qwen2:
             tensor_info = manifest[tensor_name]
             file_path = tensor_info["file_path"]
 
-            targets_by_file.setdefault(
-                file_path,
-                [],
-            ).append(
-                (
-                    tensor_name,
-                    target,
-                    tensor_info,
-                )
-            )
+            targets_by_file.setdefault(file_path, []).append((tensor_name, target, tensor_info))
 
         total_weights = len(targets)
         loaded_weights = 0
 
-        print(
-            f"Loading {total_weights} Qwen2 weights to {self.device.name}...",
-            flush=True,
-        )
+        print(f"Loading {total_weights} Qwen2 weights to {self.device.name}...", flush=True)
 
         for file_path, file_targets in targets_by_file.items():
             with file_path.open("rb") as file:
-                mapped = mmap.mmap(
-                    file.fileno(),
-                    length=0,
-                    access=mmap.ACCESS_COPY,
-                )
+                mapped = mmap.mmap(file.fileno(), length=0, access=mmap.ACCESS_COPY)
 
                 try:
-                    for (
-                        tensor_name,
-                        target,
-                        tensor_info,
-                    ) in file_targets:
+                    for tensor_name, target, tensor_info in file_targets:
                         field_name, layer_index = target
 
-                        tensor = self._create_tensor_from_mmap(
-                            mapped,
-                            tensor_name,
-                            tensor_info,
-                        )
+                        tensor = self._create_tensor_from_mmap(mapped, tensor_name, tensor_info)
 
-                        self._assign_weight(
-                            field_name,
-                            layer_index,
-                            tensor,
-                        )
+                        self._assign_weight(field_name, layer_index, tensor)
 
                         self._weight_tensors[tensor_name] = tensor
 
                         loaded_weights += 1
 
                         if loaded_weights % 25 == 0 or loaded_weights == total_weights:
-                            print(
-                                f"Loaded Qwen2 weights: {loaded_weights}/{total_weights}",
-                                flush=True,
-                            )
+                            print(f"Loaded Qwen2 weights: {loaded_weights}/{total_weights}", flush=True)
 
                 finally:
                     mapped.close()
 
         self._weights_loaded = True
 
-        print(
-            "Qwen2 weight loading completed.",
-            flush=True,
-        )
+        print("Qwen2 weight loading completed.", flush=True)
 
     def _destroy_weight_tensors(self):
         seen_addresses = set()
@@ -445,10 +346,7 @@ class Qwen2:
             if isinstance(tensor, int):
                 address = tensor
             else:
-                address = ctypes.cast(
-                    tensor,
-                    ctypes.c_void_p,
-                ).value
+                address = ctypes.cast(tensor, ctypes.c_void_p).value
 
             if not address:
                 continue
@@ -464,11 +362,7 @@ class Qwen2:
         self._weights_loaded = False
 
     def close(self):
-        model = getattr(
-            self,
-            "_model",
-            None,
-        )
+        model = getattr(self, "_model", None)
 
         # C++ model only borrows weight handles, so destroy
         # the model before destroying the actual tensors.
@@ -480,11 +374,7 @@ class Qwen2:
         self._weights_pointer = None
         self._weights = None
 
-        weight_tensors = getattr(
-            self,
-            "_weight_tensors",
-            None,
-        )
+        weight_tensors = getattr(self, "_weight_tensors", None)
 
         if weight_tensors is not None:
             self._destroy_weight_tensors()
@@ -492,12 +382,7 @@ class Qwen2:
     def __enter__(self):
         return self
 
-    def __exit__(
-        self,
-        exception_type,
-        exception_value,
-        traceback,
-    ):
+    def __exit__(self, exception_type, exception_value, traceback):
         self.close()
 
     def __del__(self):
@@ -554,13 +439,7 @@ class Qwen2:
 
             token_buffer = TokenArray(*pending_tokens)
 
-            next_token = int(
-                LIB_LLAISYS.llaisysQwen2ModelInfer(
-                    self._model,
-                    token_buffer,
-                    len(pending_tokens),
-                )
-            )
+            next_token = int(LIB_LLAISYS.llaisysQwen2ModelInfer(self._model, token_buffer, len(pending_tokens)))
 
             if next_token < 0:
                 raise RuntimeError("Qwen2 backend inference failed.")
