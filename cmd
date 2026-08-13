@@ -11,6 +11,11 @@ find . \
 ruff format .
 
 Tensor → Add → SwiGLU → Rearrange → Embedding → Argmax → RMSNorm → RoPE → Linear → Self-Attention
+1. Argmax
+2. Embedding
+3. Linear
+4. QKV
+5. Self-Attention
 --------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
 rm -rf .xmake
@@ -83,6 +88,29 @@ python test/ops/rope.py --device metax
 python test/ops/self_attention.py --device metax
 python test/ops/swiglu.py --device metax
 python test/test_runtime.py --device metax
+
+
+python test/test_runtime.py --device nvidia     --backend triton
+
+python test/ops/add.py --device nvidia     --backend triton
+
+python test/ops/argmax.py --device nvidia     --backend triton
+
+python test/ops/embedding.py --device nvidia     --backend triton
+
+python test/ops/linear.py --device nvidia     --backend triton
+
+python test/ops/rms_norm.py --device nvidia     --backend triton
+
+python test/ops/rope.py --device nvidia     --backend triton
+
+python test/ops/self_attention.py --device nvidia     --backend triton
+
+python test/ops/swiglu.py --device nvidia     --backend triton
+
+
+
+
 
 
 MODEL_PATH="$(cat tmp/model_path.txt)"

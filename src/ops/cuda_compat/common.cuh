@@ -78,10 +78,7 @@ __host__ __device__ constexpr std::size_t div_ceil(std::size_t value, std::size_
  * @brief Computes the number of thread blocks needed for a workload,
  *        limited by a caller-provided grid-size cap.
  *
- * The required number of blocks is:
- *
- *     ceil(work_items / block_size)
- *
+ * The required number of blocks is: ceil(work_items / block_size)
  * If that value exceeds max_grid_size, the returned grid size is capped.
  *
  * This helper only implements the shared grid-size calculation.
@@ -90,7 +87,6 @@ __host__ __device__ constexpr std::size_t div_ceil(std::size_t value, std::size_
 inline std::size_t
 get_capped_grid_size(std::size_t work_items, std::size_t block_size, std::size_t max_grid_size) {
     const std::size_t required_blocks = div_ceil(work_items, block_size);
-
     return required_blocks < max_grid_size ? required_blocks : max_grid_size;
 }
 
@@ -129,12 +125,10 @@ template <typename T> __device__ __forceinline__ T from_float(float value) {
 // ============================================================
 
 template <std::size_t Alignment, typename T> inline bool is_aligned(const T *pointer) {
-    static_assert(
-        Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
+    static_assert(Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
         "Alignment must be a nonzero power of two.");
 
     const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(pointer);
-
     return address % Alignment == 0;
 }
 

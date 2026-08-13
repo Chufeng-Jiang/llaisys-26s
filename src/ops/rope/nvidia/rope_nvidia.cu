@@ -10,6 +10,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <stdexcept>
 
 namespace {
 
@@ -19,6 +22,50 @@ using llaisys::device::nvidia::get_warp_aligned_block_size;
 using llaisys::device::nvidia::to_cuda_stream;
 using llaisys::ops::cuda_compat::get_capped_grid_size;
 using llaisys::utils::checked_product;
+
+// ============================================================
+// NVIDIA RoPE implementation selection
+// ============================================================
+//
+// Environment variable:
+//
+//     LLAISYS_NVIDIA_ROPE_IMPL
+//
+// Values:
+//
+//     auto
+//         Use the current NVIDIA tuning policy.
+//
+//     direct
+//         Force Implementation 0:
+//         direct RoPE kernel.
+//
+//     cached
+//         Force Implementation 1:
+//         shared-memory cached RoPE kernel.
+//
+// The environment variable is intentionally read on every
+// operator invocation. This allows Direct/Cached interleaved
+// A/B benchmarking within the same process.
+// ============================================================
+
+enum class NvidiaRopeImpl {
+    AUTO,
+    DIRECT,
+    CACHED,
+};
+
+NvidiaRopeImpl get_nvidia_rope_impl() {
+    const char *value = std::getenv("LLAISYS_NVIDIA_ROPE_IMPL");
+
+    if (value == nullptr || std::strcmp(value, "auto") == 0) { return NvidiaRopeImpl::AUTO; }
+
+    if (std::strcmp(value, "direct") == 0) { return NvidiaRopeImpl::DIRECT; }
+
+    if (std::strcmp(value, "cached") == 0) { return NvidiaRopeImpl::CACHED; }
+
+    throw std::invalid_argument("LLAISYS_NVIDIA_ROPE_IMPL must be auto, direct, or cached.");
+}
 
 // ============================================================
 // NVIDIA RoPE tuning
@@ -37,9 +84,44 @@ using llaisys::utils::checked_product;
 //
 // This threshold is an NVIDIA scheduling/tuning choice and is
 // therefore deliberately kept outside cuda_compat.
+//
+// IMPORTANT:
+//
+// This threshold is used only by AUTO.
+//
+// If the user explicitly selects "cached", the cached
+// implementation is forced so that the A/B benchmark actually
+// measures the cached implementation.
 // ============================================================
 
 inline constexpr std::size_t NVIDIA_MAX_CACHED_HALF_DIMENSION = 2048;
+
+// ============================================================
+// NVIDIA implementation selector
+// ============================================================
+
+bool select_cached_kernel(
+    NvidiaRopeImpl implementation, std::size_t head_count, std::size_t half_dimension) {
+    switch (implementation) {
+    case NvidiaRopeImpl::DIRECT:
+        return false;
+
+    case NvidiaRopeImpl::CACHED:
+        CHECK_ARGUMENT(
+            half_dimension <= NVIDIA_MAX_CACHED_HALF_DIMENSION,
+            "RoPE: forced NVIDIA cached implementation exceeds "
+            "NVIDIA_MAX_CACHED_HALF_DIMENSION.");
+
+        return true;
+
+    case NvidiaRopeImpl::AUTO:
+        return head_count > 1 && half_dimension <= NVIDIA_MAX_CACHED_HALF_DIMENSION;
+    }
+
+    CHECK_ARGUMENT(false, "RoPE: invalid NVIDIA implementation.");
+
+    return false;
+}
 
 // ============================================================
 // NVIDIA launcher
@@ -98,6 +180,16 @@ void launch_nvidia_rope(
     // ========================================================
     // NVIDIA-specific launch tuning
     // ========================================================
+    //
+    // Both Direct and Cached deliberately use the same:
+    //
+    //     block_size
+    //     grid_size
+    //     stream
+    //
+    // This keeps the A/B comparison focused on the execution
+    // strategy rather than changing the launch configuration.
+    // ========================================================
 
     const unsigned int block_size
         = get_warp_aligned_block_size(std::max(half_dimension, pair_count));
@@ -105,17 +197,31 @@ void launch_nvidia_rope(
     const std::size_t grid_size
         = get_capped_grid_size(sequence_length, 1, CUDA_DEFAULT_MAX_GRID_SIZE);
 
-    // Cached path is useful only when multiple heads can reuse
-    // each computed sine/cosine pair.
-    //
-    // The dimension threshold is kept NVIDIA-specific because
-    // shared-memory capacity and occupancy differ by backend.
+    // ========================================================
+    // Implementation selection
+    // ========================================================
 
-    const bool use_cached_kernel
-        = head_count > 1 && half_dimension <= NVIDIA_MAX_CACHED_HALF_DIMENSION;
+    const NvidiaRopeImpl implementation = get_nvidia_rope_impl();
+
+    const bool use_cached_kernel = select_cached_kernel(implementation, head_count, half_dimension);
 
     // ========================================================
     // Shared CUDA-compatible implementation
+    // ========================================================
+    //
+    // Implementation 0:
+    //
+    //     use_cached_kernel = false
+    //
+    // Implementation 1:
+    //
+    //     use_cached_kernel = true
+    //
+    // The actual RoPE mathematical implementation remains in:
+    //
+    //     ../cuda_compat/rope_cuda_compat.cuh
+    //
+    // so NVIDIA and MetaX can reuse exactly the same algorithm.
     // ========================================================
 
     cuda_compat::launch_rope_kernel<T>(
