@@ -10,7 +10,13 @@ set_warnings("all", "error")
 set_policy("build.cuda.devlink", true)
 set_toolchains("cuda")
 
-add_links("cudart")
+add_links(
+    "cublas",
+    "cudart",
+    {
+        public = true
+    }
+)
 
 if is_plat("windows") then
     add_cuflags("-Xcompiler=/utf-8", "--expt-relaxed-constexpr", "--allow-unsupported-compiler")
@@ -72,8 +78,13 @@ set_warnings("all", "error")
 set_policy("build.cuda.devlink", true)
 set_toolchains("cuda")
 
-add_links("cudart")
-add_links("cublas")
+add_links(
+    "cudart",
+    "cublas",
+    {
+        public = true
+    }
+)
 
 add_cugencodes("native")
 

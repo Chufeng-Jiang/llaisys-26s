@@ -1,15 +1,12 @@
 #include "../../core/llaisys_core.hpp"
+#include "../../device/device_utils.hpp"
 #include "../../utils.hpp"
 
 #include "cpu/add_cpu.hpp"
 #include "op.hpp"
 
-#ifdef ENABLE_NVIDIA_API
-#include "nvidia/add_nvidia.cuh"
-#endif
-
-#ifdef ENABLE_METAX_API
-#include "metax/add_metax.hpp"
+#if defined(ENABLE_NVIDIA_API) || defined(ENABLE_METAX_API)
+#include "cuda/add_cuda.hpp"
 #endif
 
 namespace llaisys::ops {
@@ -23,31 +20,23 @@ void add(tensor_t c, tensor_t a, tensor_t b) {
         c->isContiguous() && a->isContiguous() && b->isContiguous(),
         "Add: all tensors must be contiguous.");
 
-    switch (c->deviceType()) {
-    case LLAISYS_DEVICE_CPU:
+    const auto device_type = c->deviceType();
+
+    if (device_type == LLAISYS_DEVICE_CPU) {
         return cpu::add(c->data(), a->data(), b->data(), c->dtype(), c->numel());
+    }
 
-#ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA: {
-        core::context().setDevice(c->deviceType(), c->deviceId());
+#if defined(ENABLE_NVIDIA_API) || defined(ENABLE_METAX_API)
+    if (device::is_cuda_compatible_gpu(device_type)) {
+        core::context().setDevice(device_type, c->deviceId());
+
         auto &runtime = core::context().runtime();
-        return nvidia::add(
-            c->data(), a->data(), b->data(), c->dtype(), c->numel(), runtime.stream());
+
+        return cuda::add(c->data(), a->data(), b->data(), c->dtype(), c->numel(), runtime.stream());
     }
 #endif
 
-#ifdef ENABLE_METAX_API
-    case LLAISYS_DEVICE_METAX: {
-        core::context().setDevice(c->deviceType(), c->deviceId());
-        auto &runtime = core::context().runtime();
-        return metax::add(
-            c->data(), a->data(), b->data(), c->dtype(), c->numel(), runtime.stream());
-    }
-#endif
-
-    default:
-        EXCEPTION_UNSUPPORTED_DEVICE;
-    }
+    EXCEPTION_UNSUPPORTED_DEVICE;
 }
 
 } // namespace llaisys::ops

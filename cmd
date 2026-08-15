@@ -10,14 +10,14 @@ find . \
 
 ruff format .
 
-Tensor → Add → SwiGLU → Rearrange → Embedding → Argmax → RMSNorm → RoPE → Linear → Self-Attention
-1. Argmax
-2. Embedding
-3. Linear
-4. QKV
-5. Self-Attention
+Tensor → Add → Rearrange → Embedding → Argmax → RMSNorm → RoPE → Linear → Self-Attention
+1. Linear
+2. Self-Attention
+3. RMSNorm
+4. RoPE
 --------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
+xmake clean -a
 rm -rf .xmake
 rm -rf build
 xmake f -c \
@@ -91,24 +91,14 @@ python test/test_runtime.py --device metax
 
 
 python test/test_runtime.py --device nvidia     --backend triton
-
 python test/ops/add.py --device nvidia     --backend triton
-
 python test/ops/argmax.py --device nvidia     --backend triton
-
 python test/ops/embedding.py --device nvidia     --backend triton
-
 python test/ops/linear.py --device nvidia     --backend triton
-
 python test/ops/rms_norm.py --device nvidia     --backend triton
-
 python test/ops/rope.py --device nvidia     --backend triton
-
 python test/ops/self_attention.py --device nvidia     --backend triton
-
 python test/ops/swiglu.py --device nvidia     --backend triton
-
-
 
 
 

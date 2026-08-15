@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstddef>
-
 #include "llaisys.h"
+
+#include <cstddef>
 
 namespace llaisys::ops::cpu {
 

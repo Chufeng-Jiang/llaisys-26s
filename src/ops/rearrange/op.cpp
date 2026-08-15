@@ -1,16 +1,13 @@
 #include "op.hpp"
 
 #include "../../core/context/context.hpp"
+#include "../../device/device_utils.hpp"
 #include "../../utils.hpp"
 
 #include "cpu/rearrange_cpu.hpp"
 
-#ifdef ENABLE_NVIDIA_API
-#include "nvidia/rearrange_nvidia.cuh"
-#endif
-
-#ifdef ENABLE_METAX_API
-#include "metax/rearrange_metax.hpp"
+#if defined(ENABLE_NVIDIA_API) || defined(ENABLE_METAX_API)
+#include "cuda/rearrange_cuda.hpp"
 #endif
 
 #include <cstddef>
@@ -19,13 +16,11 @@ namespace llaisys::ops {
 
 void rearrange(tensor_t out, tensor_t in) {
     CHECK_ARGUMENT(out != nullptr, "Rearrange: output tensor must not be null.");
-
     CHECK_ARGUMENT(in != nullptr, "Rearrange: input tensor must not be null.");
 
     CHECK_ARGUMENT(
         out->numel() == in->numel(),
-        "Rearrange: input and output tensors must have the same number of "
-        "elements.");
+        "Rearrange: input and output tensors must have the same number of elements.");
 
     CHECK_ARGUMENT(
         out->dtype() == in->dtype(),
@@ -43,41 +38,27 @@ void rearrange(tensor_t out, tensor_t in) {
 
     if (numel == 0) { return; }
 
-    switch (out->deviceType()) {
-    case LLAISYS_DEVICE_CPU:
+    const auto device_type = out->deviceType();
+
+    if (device_type == LLAISYS_DEVICE_CPU) {
         return cpu::rearrange(
             out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
             in->strides());
+    }
 
-#ifdef ENABLE_NVIDIA_API
-    case LLAISYS_DEVICE_NVIDIA: {
-        core::context().setDevice(out->deviceType(), out->deviceId());
+#if defined(ENABLE_NVIDIA_API) || defined(ENABLE_METAX_API)
+    if (device::is_cuda_compatible_gpu(device_type)) {
+        core::context().setDevice(device_type, out->deviceId());
 
         auto &runtime = core::context().runtime();
 
-        return nvidia::rearrange(
+        return cuda::rearrange(
             out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
             in->strides(), runtime.stream());
     }
 #endif
 
-#ifdef ENABLE_METAX_API
-    case LLAISYS_DEVICE_METAX: {
-        core::context().setDevice(out->deviceType(), out->deviceId());
-
-        auto &runtime = core::context().runtime();
-
-        return metax::rearrange(
-            out->data(), in->data(), out->dtype(), numel, out->shape(), out->strides(), in->shape(),
-            in->strides(), runtime.stream());
-    }
-#endif
-
-    default:
-        CHECK_ARGUMENT(false, "Rearrange: unsupported device type.");
-
-        return;
-    }
+    CHECK_ARGUMENT(false, "Rearrange: unsupported device type.");
 }
 
 } // namespace llaisys::ops
