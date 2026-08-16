@@ -132,7 +132,8 @@ python test/test_infer.py \
 	--max_steps 10
 
 =====================NV and Triton=====================
-
+export LLAISYS_DEBUG=1 \
+export LLAISYS_ADD_ENABLE_VECTORIZED=1  \
 LLAISYS_BLOCK_SIZE=256 \
 python test/ops/add.py \
     --device nvidia \

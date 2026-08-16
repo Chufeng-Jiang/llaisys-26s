@@ -505,7 +505,6 @@ def benchmark(
 # Experiment recording
 # ============================================================
 
-EXPERIMENT_SCHEMA_VERSION = "llaisys.experiment.v1"
 MICROBENCHMARK_CASE_IDENTITY_VERSION = "llaisys.microbenchmark.case.v2"
 
 
@@ -1230,7 +1229,6 @@ class ExperimentRecorder:
             speedup_median = torch_stats["median_ms"] / llaisys_stats["median_ms"]
 
         record = {
-            "schema_version": (EXPERIMENT_SCHEMA_VERSION),
             "record_type": "microbenchmark",
             "record_id": uuid.uuid4().hex,
             "run_id": self.run_id,
@@ -1274,7 +1272,6 @@ class ExperimentRecorder:
             raise ValueError(f"Unsupported external record type: {record_type}")
 
         record = {
-            "schema_version": (EXPERIMENT_SCHEMA_VERSION),
             "record_type": record_type,
             "record_id": uuid.uuid4().hex,
             "run_id": self.run_id,
