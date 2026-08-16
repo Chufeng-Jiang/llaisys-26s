@@ -2,41 +2,72 @@ import math
 
 import triton
 
-from .backends.nvidia import NvidiaTritonBackend
-
+from .backends.registry import get_triton_backend
 from .kernels.add import add_kernel
-
 from .kernels.argmax import argmax_stage1_kernel, argmax_stage_n_kernel
-
 from .kernels.embedding import embedding_kernel
-
+from .kernels.linear import linear_kernel, linear_zero_k_kernel
 from .kernels.rms_norm import rms_norm_kernel
-
 from .kernels.rope import rope_kernel
-
+from .kernels.self_attention import self_attention_kernel
 from .kernels.swiglu import swiglu_kernel
+from .tensor import as_triton_tensor
 
-from .tensor import as_nvidia_triton_tensor
-
+from ..libllaisys import DataType
+from ..runtime import RuntimeAPI
 from ..tensor import Tensor
 
-from ..runtime import RuntimeAPI
 
-from ..libllaisys import DataType, DeviceType
+# ============================================================
+# Runtime cache
+# ============================================================
 
-from .kernels.linear import linear_kernel, linear_zero_k_kernel
-from .kernels.self_attention import self_attention_kernel
+_runtime_cache = {}
 
-_nvidia_backend = NvidiaTritonBackend()
 
-_nvidia_runtime = RuntimeAPI(DeviceType.NVIDIA)
+def _get_runtime(device_type):
+    runtime = _runtime_cache.get(device_type)
+
+    if runtime is None:
+        runtime = RuntimeAPI(device_type)
+        _runtime_cache[device_type] = runtime
+
+    return runtime
 
 
 # ============================================================
-# Argmax workspace cache
+# Backend / device helpers
 # ============================================================
 
-_argmax_workspace_cache = {}
+
+def _resolve_backend(*tensors):
+    if not tensors:
+        raise ValueError("At least one tensor is required")
+
+    device_type = tensors[0].device_type()
+    device_id = tensors[0].device_id()
+
+    for tensor in tensors[1:]:
+        if tensor.device_type() != device_type:
+            raise ValueError("Triton tensors must use the same device type")
+
+        if tensor.device_id() != device_id:
+            raise ValueError("Triton tensors must be on the same device")
+
+    backend = get_triton_backend(device_type)
+    runtime = _get_runtime(device_type)
+
+    return backend, runtime, device_type, device_id
+
+
+def _launch(backend, runtime, device_id, launch):
+    stream_ptr = runtime.get_context_stream(device_id)
+
+    if backend.in_execution_context(stream_ptr, device_id):
+        return launch()
+
+    with backend.stream_context(stream_ptr, device_id):
+        return launch()
 
 
 # ============================================================
@@ -57,9 +88,7 @@ def _is_contiguous(shape, strides):
     if len(shape) != len(strides):
         return False
 
-    numel = _numel(shape)
-
-    if numel == 0:
+    if _numel(shape) == 0:
         return True
 
     expected_stride = 1
@@ -76,29 +105,32 @@ def _is_contiguous(shape, strides):
     return True
 
 
-# ============================================================
-# Argmax workspace
-# ============================================================
+def _require_contiguous(tensor, name):
+    if not _is_contiguous(tensor.shape(), tensor.strides()):
+        raise ValueError(f"Triton {name} must be contiguous")
 
 
-def _get_argmax_workspace(num_blocks, dtype, device_id):
-    key = (device_id, dtype, num_blocks)
+# ============================================================
+# Argmax workspace cache
+# ============================================================
+
+_argmax_workspace_cache = {}
+
+
+def _get_argmax_workspace(num_blocks, dtype, device_type, device_id):
+    key = (device_type, device_id, dtype, num_blocks)
 
     workspace = _argmax_workspace_cache.get(key)
 
     if workspace is not None:
         return workspace
 
-    values_a = Tensor((num_blocks,), dtype=dtype, device=DeviceType.NVIDIA, device_id=device_id)
-
-    indices_a = Tensor((num_blocks,), dtype=DataType.I64, device=DeviceType.NVIDIA, device_id=device_id)
-
-    values_b = Tensor((num_blocks,), dtype=dtype, device=DeviceType.NVIDIA, device_id=device_id)
-
-    indices_b = Tensor((num_blocks,), dtype=DataType.I64, device=DeviceType.NVIDIA, device_id=device_id)
+    values_a = Tensor((num_blocks,), dtype=dtype, device=device_type, device_id=device_id)
+    indices_a = Tensor((num_blocks,), dtype=DataType.I64, device=device_type, device_id=device_id)
+    values_b = Tensor((num_blocks,), dtype=dtype, device=device_type, device_id=device_id)
+    indices_b = Tensor((num_blocks,), dtype=DataType.I64, device=device_type, device_id=device_id)
 
     workspace = (values_a, indices_a, values_b, indices_b)
-
     _argmax_workspace_cache[key] = workspace
 
     return workspace
@@ -114,21 +146,9 @@ def add(c, a, b):
     a_shape = a.shape()
     b_shape = b.shape()
 
-    c_strides = c.strides()
-    a_strides = a.strides()
-    b_strides = b.strides()
-
     c_dtype = c.dtype()
     a_dtype = a.dtype()
     b_dtype = b.dtype()
-
-    c_device_type = c.device_type()
-    a_device_type = a.device_type()
-    b_device_type = b.device_type()
-
-    c_device_id = c.device_id()
-    a_device_id = a.device_id()
-    b_device_id = b.device_id()
 
     if c_shape != a_shape or c_shape != b_shape:
         raise ValueError("Triton Add requires tensors with the same shape")
@@ -136,44 +156,29 @@ def add(c, a, b):
     if c_dtype != a_dtype or c_dtype != b_dtype:
         raise ValueError("Triton Add requires tensors with the same dtype")
 
-    if c_device_type != DeviceType.NVIDIA or a_device_type != DeviceType.NVIDIA or b_device_type != DeviceType.NVIDIA:
-        raise ValueError("NVIDIA Triton Add requires NVIDIA tensors")
+    backend, runtime, _, device_id = _resolve_backend(c, a, b)
 
-    if c_device_id != a_device_id or c_device_id != b_device_id:
-        raise ValueError("Triton Add requires tensors on the same device")
-
-    if not _is_contiguous(c_shape, c_strides):
-        raise ValueError("Triton Add output must be contiguous")
-
-    if not _is_contiguous(a_shape, a_strides):
-        raise ValueError("Triton Add left input must be contiguous")
-
-    if not _is_contiguous(b_shape, b_strides):
-        raise ValueError("Triton Add right input must be contiguous")
+    _require_contiguous(c, "Add output")
+    _require_contiguous(a, "Add left input")
+    _require_contiguous(b, "Add right input")
 
     numel = _numel(c_shape)
 
     if numel == 0:
         return c
 
-    config = _nvidia_backend.add_config(numel)
+    config = backend.add_config(numel)
     block_size = config["BLOCK_SIZE"]
     grid = (triton.cdiv(numel, block_size),)
 
-    c_triton = as_nvidia_triton_tensor(c)
-    a_triton = as_nvidia_triton_tensor(a)
-    b_triton = as_nvidia_triton_tensor(b)
-
-    stream_ptr = _nvidia_runtime.get_context_stream(c_device_id)
+    c_triton = as_triton_tensor(c, backend)
+    a_triton = as_triton_tensor(a, backend)
+    b_triton = as_triton_tensor(b, backend)
 
     def launch():
         add_kernel[grid](c_triton, a_triton, b_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"])
 
-    if _nvidia_backend.in_execution_context(stream_ptr, c_device_id):
-        launch()
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, c_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return c
 
@@ -188,21 +193,9 @@ def swiglu(out, gate, up):
     gate_shape = gate.shape()
     up_shape = up.shape()
 
-    out_strides = out.strides()
-    gate_strides = gate.strides()
-    up_strides = up.strides()
-
     out_dtype = out.dtype()
     gate_dtype = gate.dtype()
     up_dtype = up.dtype()
-
-    out_device_type = out.device_type()
-    gate_device_type = gate.device_type()
-    up_device_type = up.device_type()
-
-    out_device_id = out.device_id()
-    gate_device_id = gate.device_id()
-    up_device_id = up.device_id()
 
     if out_shape != gate_shape or out_shape != up_shape:
         raise ValueError("Triton SwiGLU requires tensors with the same shape")
@@ -210,50 +203,31 @@ def swiglu(out, gate, up):
     if out_dtype != gate_dtype or out_dtype != up_dtype:
         raise ValueError("Triton SwiGLU requires tensors with the same dtype")
 
-    if (
-        out_device_type != DeviceType.NVIDIA
-        or gate_device_type != DeviceType.NVIDIA
-        or up_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton SwiGLU requires NVIDIA tensors")
+    backend, runtime, _, device_id = _resolve_backend(out, gate, up)
 
-    if out_device_id != gate_device_id or out_device_id != up_device_id:
-        raise ValueError("Triton SwiGLU requires tensors on the same device")
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton SwiGLU output must be contiguous")
-
-    if not _is_contiguous(gate_shape, gate_strides):
-        raise ValueError("Triton SwiGLU gate input must be contiguous")
-
-    if not _is_contiguous(up_shape, up_strides):
-        raise ValueError("Triton SwiGLU up input must be contiguous")
+    _require_contiguous(out, "SwiGLU output")
+    _require_contiguous(gate, "SwiGLU gate input")
+    _require_contiguous(up, "SwiGLU up input")
 
     numel = _numel(out_shape)
 
     if numel == 0:
         return out
 
-    config = _nvidia_backend.swiglu_config(numel)
+    config = backend.swiglu_config(numel)
     block_size = config["BLOCK_SIZE"]
     grid = (triton.cdiv(numel, block_size),)
 
-    out_triton = as_nvidia_triton_tensor(out)
-    gate_triton = as_nvidia_triton_tensor(gate)
-    up_triton = as_nvidia_triton_tensor(up)
-
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
+    out_triton = as_triton_tensor(out, backend)
+    gate_triton = as_triton_tensor(gate, backend)
+    up_triton = as_triton_tensor(up, backend)
 
     def launch():
         swiglu_kernel[grid](
             out_triton, gate_triton, up_triton, numel, BLOCK_SIZE=block_size, num_warps=config["num_warps"]
         )
 
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return out
 
@@ -275,14 +249,6 @@ def rms_norm(out, x, weight, eps):
     out_dtype = out.dtype()
     x_dtype = x.dtype()
     weight_dtype = weight.dtype()
-
-    out_device_type = out.device_type()
-    x_device_type = x.device_type()
-    weight_device_type = weight.device_type()
-
-    out_device_id = out.device_id()
-    x_device_id = x.device_id()
-    weight_device_id = weight.device_id()
 
     if len(out_shape) != 2:
         raise ValueError("Triton RMSNorm output tensor must be two-dimensional")
@@ -316,37 +282,22 @@ def rms_norm(out, x, weight, eps):
     if out_dtype != x_dtype or out_dtype != weight_dtype:
         raise ValueError("Triton RMSNorm output, input, and weight must use the same dtype")
 
-    if (
-        out_device_type != DeviceType.NVIDIA
-        or x_device_type != DeviceType.NVIDIA
-        or weight_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton RMSNorm requires NVIDIA tensors")
+    backend, runtime, _, device_id = _resolve_backend(out, x, weight)
 
-    if out_device_id != x_device_id or out_device_id != weight_device_id:
-        raise ValueError("Triton RMSNorm tensors must be on the same device")
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton RMSNorm output must be contiguous")
-
-    if not _is_contiguous(x_shape, x_strides):
-        raise ValueError("Triton RMSNorm input must be contiguous")
-
-    if not _is_contiguous(weight_shape, weight_strides):
-        raise ValueError("Triton RMSNorm weight must be contiguous")
+    _require_contiguous(out, "RMSNorm output")
+    _require_contiguous(x, "RMSNorm input")
+    _require_contiguous(weight, "RMSNorm weight")
 
     if nrow == 0:
         return out
 
-    config = _nvidia_backend.rms_norm_config(ncol)
+    config = backend.rms_norm_config(ncol)
     block_size = config["BLOCK_SIZE"]
     grid = (nrow,)
 
-    out_triton = as_nvidia_triton_tensor(out)
-    x_triton = as_nvidia_triton_tensor(x)
-    weight_triton = as_nvidia_triton_tensor(weight)
-
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
+    out_triton = as_triton_tensor(out, backend)
+    x_triton = as_triton_tensor(x, backend)
+    weight_triton = as_triton_tensor(weight, backend)
 
     def launch():
         rms_norm_kernel[grid](
@@ -364,11 +315,7 @@ def rms_norm(out, x, weight, eps):
             num_warps=config["num_warps"],
         )
 
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return out
 
@@ -376,7 +323,6 @@ def rms_norm(out, x, weight, eps):
 # ============================================================
 # RoPE
 # ============================================================
-
 
 def rope(out, x, pos_ids, theta):
     out_shape = out.shape()
@@ -390,14 +336,6 @@ def rope(out, x, pos_ids, theta):
     out_dtype = out.dtype()
     x_dtype = x.dtype()
     pos_dtype = pos_ids.dtype()
-
-    out_device_type = out.device_type()
-    x_device_type = x.device_type()
-    pos_device_type = pos_ids.device_type()
-
-    out_device_id = out.device_id()
-    x_device_id = x.device_id()
-    pos_device_id = pos_ids.device_id()
 
     if len(out_shape) != 3:
         raise ValueError("Triton RoPE output tensor must be three-dimensional")
@@ -419,7 +357,9 @@ def rope(out, x, pos_ids, theta):
         raise ValueError("Triton RoPE position-id length must match sequence length")
 
     if sequence_length > 0 and head_count <= 0:
-        raise ValueError("Triton RoPE head count must be positive for a nonempty sequence")
+        raise ValueError(
+            "Triton RoPE head count must be positive for a nonempty sequence"
+        )
 
     if head_dim <= 0:
         raise ValueError("Triton RoPE head dimension must be greater than zero")
@@ -438,39 +378,65 @@ def rope(out, x, pos_ids, theta):
     if pos_dtype != DataType.I64:
         raise ValueError("Triton RoPE position IDs must use Int64")
 
-    if (
-        out_device_type != DeviceType.NVIDIA
-        or x_device_type != DeviceType.NVIDIA
-        or pos_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton RoPE requires NVIDIA tensors")
+    backend, runtime, _, device_id = _resolve_backend(
+        out,
+        x,
+        pos_ids,
+    )
 
-    if out_device_id != x_device_id or out_device_id != pos_device_id:
-        raise ValueError("Triton RoPE tensors must be on the same device")
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton RoPE output must be contiguous")
-
-    if not _is_contiguous(x_shape, x_strides):
-        raise ValueError("Triton RoPE input must be contiguous")
-
-    if not _is_contiguous(pos_shape, pos_strides):
-        raise ValueError("Triton RoPE position IDs must be contiguous")
+    _require_contiguous(out, "RoPE output")
+    _require_contiguous(x, "RoPE input")
+    _require_contiguous(pos_ids, "RoPE position IDs")
 
     if sequence_length == 0 or head_count == 0:
         return out
 
-    config = _nvidia_backend.rope_config(head_dim)
+    config = backend.rope_config(head_dim)
+
     block_size = config["BLOCK_SIZE"]
     half_dim = head_dim // 2
 
-    grid = (sequence_length, head_count, triton.cdiv(half_dim, block_size))
+    # ============================================================
+    # Grid
+    #
+    # axis 0:
+    #     token
+    #
+    # axis 1:
+    #     RoPE pair tile
+    #
+    # One Triton program computes the frequency / sin / cos values
+    # once for one (token, pair tile), then reuses them across all
+    # attention heads inside the kernel.
+    #
+    # Old:
+    #
+    #     token x head x pair_tile
+    #
+    # New:
+    #
+    #     token x pair_tile
+    # ============================================================
 
-    out_triton = as_nvidia_triton_tensor(out)
-    x_triton = as_nvidia_triton_tensor(x)
-    pos_triton = as_nvidia_triton_tensor(pos_ids)
+    grid = (
+        sequence_length,
+        triton.cdiv(half_dim, block_size),
+    )
 
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
+    out_triton = as_triton_tensor(
+        out,
+        backend,
+    )
+
+    x_triton = as_triton_tensor(
+        x,
+        backend,
+    )
+
+    pos_triton = as_triton_tensor(
+        pos_ids,
+        backend,
+    )
 
     def launch():
         rope_kernel[grid](
@@ -478,6 +444,7 @@ def rope(out, x, pos_ids, theta):
             x_triton,
             pos_triton,
             theta,
+            head_count,
             x_strides[0],
             x_strides[1],
             x_strides[2],
@@ -490,11 +457,12 @@ def rope(out, x, pos_ids, theta):
             num_warps=config["num_warps"],
         )
 
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(
+        backend,
+        runtime,
+        device_id,
+        launch,
+    )
 
     return out
 
@@ -509,21 +477,9 @@ def argmax(max_idx, max_val, vals):
     max_idx_shape = max_idx.shape()
     max_val_shape = max_val.shape()
 
-    vals_strides = vals.strides()
-    max_idx_strides = max_idx.strides()
-    max_val_strides = max_val.strides()
-
     vals_dtype = vals.dtype()
     max_idx_dtype = max_idx.dtype()
     max_val_dtype = max_val.dtype()
-
-    vals_device_type = vals.device_type()
-    max_idx_device_type = max_idx.device_type()
-    max_val_device_type = max_val.device_type()
-
-    vals_device_id = vals.device_id()
-    max_idx_device_id = max_idx.device_id()
-    max_val_device_id = max_val.device_id()
 
     if len(vals_shape) != 1:
         raise ValueError("Triton Argmax input tensor must be one-dimensional")
@@ -553,60 +509,38 @@ def argmax(max_idx, max_val, vals):
     if max_idx_dtype != DataType.I64:
         raise ValueError("Triton Argmax max_idx must use Int64")
 
-    if (
-        vals_device_type != DeviceType.NVIDIA
-        or max_idx_device_type != DeviceType.NVIDIA
-        or max_val_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton Argmax requires NVIDIA tensors")
+    backend, runtime, device_type, device_id = _resolve_backend(vals, max_idx, max_val)
 
-    if vals_device_id != max_idx_device_id or vals_device_id != max_val_device_id:
-        raise ValueError("Triton Argmax tensors must be on the same device")
+    _require_contiguous(vals, "Argmax input")
+    _require_contiguous(max_idx, "Argmax max_idx")
+    _require_contiguous(max_val, "Argmax max_val")
 
-    if not _is_contiguous(vals_shape, vals_strides):
-        raise ValueError("Triton Argmax input must be contiguous")
-
-    if not _is_contiguous(max_idx_shape, max_idx_strides):
-        raise ValueError("Triton Argmax max_idx must be contiguous")
-
-    if not _is_contiguous(max_val_shape, max_val_strides):
-        raise ValueError("Triton Argmax max_val must be contiguous")
-
-    config = _nvidia_backend.argmax_config(numel)
+    config = backend.argmax_config(numel)
 
     stage1_block = config["STAGE1_BLOCK_SIZE"]
-
     stage1_warps = config["STAGE1_NUM_WARPS"]
-
     stagen_block = config["STAGEN_BLOCK_SIZE"]
-
     stagen_warps = config["STAGEN_NUM_WARPS"]
 
     num_blocks = (numel + stage1_block - 1) // stage1_block
 
-    vals_triton = as_nvidia_triton_tensor(vals)
-
-    max_idx_triton = as_nvidia_triton_tensor(max_idx)
-
-    max_val_triton = as_nvidia_triton_tensor(max_val)
+    vals_triton = as_triton_tensor(vals, backend)
+    max_idx_triton = as_triton_tensor(max_idx, backend)
+    max_val_triton = as_triton_tensor(max_val, backend)
 
     def launch():
         if num_blocks == 1:
             argmax_stage1_kernel[(1,)](
                 vals_triton, max_val_triton, max_idx_triton, numel, BLOCK_SIZE=stage1_block, num_warps=stage1_warps
             )
-
             return
 
-        (values_a, indices_a, values_b, indices_b) = _get_argmax_workspace(num_blocks, vals_dtype, vals_device_id)
+        values_a, indices_a, values_b, indices_b = _get_argmax_workspace(num_blocks, vals_dtype, device_type, device_id)
 
-        values_a_triton = as_nvidia_triton_tensor(values_a)
-
-        indices_a_triton = as_nvidia_triton_tensor(indices_a)
-
-        values_b_triton = as_nvidia_triton_tensor(values_b)
-
-        indices_b_triton = as_nvidia_triton_tensor(indices_b)
+        values_a_triton = as_triton_tensor(values_a, backend)
+        indices_a_triton = as_triton_tensor(indices_a, backend)
+        values_b_triton = as_triton_tensor(values_b, backend)
+        indices_b_triton = as_triton_tensor(indices_b, backend)
 
         argmax_stage1_kernel[(num_blocks,)](
             vals_triton, values_a_triton, indices_a_triton, numel, BLOCK_SIZE=stage1_block, num_warps=stage1_warps
@@ -623,11 +557,9 @@ def argmax(max_idx, max_val, vals):
             if next_n == 1:
                 out_values = max_val_triton
                 out_indices = max_idx_triton
-
             elif current_is_a:
                 out_values = values_b_triton
                 out_indices = indices_b_triton
-
             else:
                 out_values = values_a_triton
                 out_indices = indices_a_triton
@@ -643,16 +575,9 @@ def argmax(max_idx, max_val, vals):
             if cur_n > 1:
                 current_is_a = not current_is_a
 
-    stream_ptr = _nvidia_runtime.get_context_stream(vals_device_id)
+    _launch(backend, runtime, device_id, launch)
 
-    if _nvidia_backend.in_execution_context(stream_ptr, vals_device_id):
-        launch()
-
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, vals_device_id):
-            launch()
-
-    return (max_idx, max_val)
+    return max_idx, max_val
 
 
 # ============================================================
@@ -661,37 +586,13 @@ def argmax(max_idx, max_val, vals):
 
 
 def embedding(out, index, weight):
-    # ========================================================
-    # Metadata
-    # ========================================================
-
     out_shape = out.shape()
     index_shape = index.shape()
     weight_shape = weight.shape()
 
-    out_strides = out.strides()
-    index_strides = index.strides()
-    weight_strides = weight.strides()
-
     out_dtype = out.dtype()
     index_dtype = index.dtype()
     weight_dtype = weight.dtype()
-
-    out_device_type = out.device_type()
-    index_device_type = index.device_type()
-    weight_device_type = weight.device_type()
-
-    out_device_id = out.device_id()
-    index_device_id = index.device_id()
-    weight_device_id = weight.device_id()
-
-    # ========================================================
-    # Shape
-    #
-    #     index  [N]
-    #     weight [V, D]
-    #     out    [N, D]
-    # ========================================================
 
     if len(index_shape) != 1:
         raise ValueError("Triton Embedding index tensor must be one-dimensional")
@@ -712,10 +613,6 @@ def embedding(out, index, weight):
     if out_shape[1] != embedding_dim:
         raise ValueError("Triton Embedding output column count must match embedding dimension")
 
-    # ========================================================
-    # DType
-    # ========================================================
-
     if index_dtype != DataType.I64:
         raise ValueError("Triton Embedding index tensor must use Int64")
 
@@ -727,88 +624,28 @@ def embedding(out, index, weight):
     if out_dtype != weight_dtype:
         raise ValueError("Triton Embedding output and weight must use the same dtype")
 
-    # ========================================================
-    # Device
-    # ========================================================
+    backend, runtime, _, device_id = _resolve_backend(out, index, weight)
 
-    if (
-        out_device_type != DeviceType.NVIDIA
-        or index_device_type != DeviceType.NVIDIA
-        or weight_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton Embedding requires NVIDIA tensors")
-
-    if out_device_id != index_device_id or out_device_id != weight_device_id:
-        raise ValueError("Triton Embedding tensors must be on the same device")
-
-    # ========================================================
-    # Contiguity
-    # ========================================================
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton Embedding output must be contiguous")
-
-    if not _is_contiguous(index_shape, index_strides):
-        raise ValueError("Triton Embedding index must be contiguous")
-
-    if not _is_contiguous(weight_shape, weight_strides):
-        raise ValueError("Triton Embedding weight must be contiguous")
-
-    # ========================================================
-    # Empty work
-    # ========================================================
+    _require_contiguous(out, "Embedding output")
+    _require_contiguous(index, "Embedding index")
+    _require_contiguous(weight, "Embedding weight")
 
     if index_count == 0 or embedding_dim == 0:
         return out
 
-    # ========================================================
-    # A zero-row table means every index is invalid.
-    #
-    # Current LLAISYS semantics:
-    #
-    #     invalid index
-    #         ↓
-    #     output row untouched
-    #
-    # Therefore no kernel is necessary.
-    # ========================================================
-
+    # Invalid indices intentionally leave the corresponding output row
+    # untouched. With an empty vocabulary every index is invalid.
     if vocabulary_size == 0:
         return out
 
-    # ========================================================
-    # Configuration
-    # ========================================================
-
-    config = _nvidia_backend.embedding_config(embedding_dim)
-
+    config = backend.embedding_config(embedding_dim)
     block_size = config["BLOCK_SIZE"]
-
-    # ========================================================
-    # Grid
-    # ========================================================
 
     grid = (index_count, triton.cdiv(embedding_dim, block_size))
 
-    # ========================================================
-    # Tensor bridge
-    # ========================================================
-
-    out_triton = as_nvidia_triton_tensor(out)
-
-    index_triton = as_nvidia_triton_tensor(index)
-
-    weight_triton = as_nvidia_triton_tensor(weight)
-
-    # ========================================================
-    # Runtime stream
-    # ========================================================
-
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
-
-    # ========================================================
-    # Launch
-    # ========================================================
+    out_triton = as_triton_tensor(out, backend)
+    index_triton = as_triton_tensor(index, backend)
+    weight_triton = as_triton_tensor(weight, backend)
 
     def launch():
         embedding_kernel[grid](
@@ -821,21 +658,17 @@ def embedding(out, index, weight):
             num_warps=config["num_warps"],
         )
 
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return out
 
 
-def linear(out, x, weight, bias=None):
-    # ============================================================
-    # Metadata
-    # ============================================================
+# ============================================================
+# Linear
+# ============================================================
 
+
+def linear(out, x, weight, bias=None):
     out_shape = out.shape()
     x_shape = x.shape()
     weight_shape = weight.shape()
@@ -847,22 +680,6 @@ def linear(out, x, weight, bias=None):
     out_dtype = out.dtype()
     x_dtype = x.dtype()
     weight_dtype = weight.dtype()
-
-    out_device_type = out.device_type()
-    x_device_type = x.device_type()
-    weight_device_type = weight.device_type()
-
-    out_device_id = out.device_id()
-    x_device_id = x.device_id()
-    weight_device_id = weight.device_id()
-
-    # ============================================================
-    # Shape contract
-    #
-    #     X:      [M, K]
-    #     Weight: [N, K]
-    #     Out:    [M, N]
-    # ============================================================
 
     if len(out_shape) != 2:
         raise ValueError("Triton Linear output tensor must be two-dimensional")
@@ -886,10 +703,6 @@ def linear(out, x, weight, bias=None):
     if out_shape[1] != n:
         raise ValueError("Triton Linear output feature count must match weight row count")
 
-    # ============================================================
-    # DType
-    # ============================================================
-
     supported_dtypes = (DataType.F32, DataType.F16, DataType.BF16)
 
     if x_dtype not in supported_dtypes:
@@ -898,43 +711,11 @@ def linear(out, x, weight, bias=None):
     if out_dtype != x_dtype or weight_dtype != x_dtype:
         raise ValueError("Triton Linear output, input, and weight must use the same dtype")
 
-    # ============================================================
-    # Device
-    # ============================================================
-
-    if (
-        out_device_type != DeviceType.NVIDIA
-        or x_device_type != DeviceType.NVIDIA
-        or weight_device_type != DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton Linear requires NVIDIA tensors")
-
-    if out_device_id != x_device_id or out_device_id != weight_device_id:
-        raise ValueError("Triton Linear output, input, and weight must be on the same device")
-
-    # ============================================================
-    # Contiguity
-    # ============================================================
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton Linear output must be contiguous")
-
-    if not _is_contiguous(x_shape, x_strides):
-        raise ValueError("Triton Linear input must be contiguous")
-
-    if not _is_contiguous(weight_shape, weight_strides):
-        raise ValueError("Triton Linear weight must be contiguous")
-
-    # ============================================================
-    # Optional bias
-    # ============================================================
+    tensors = [out, x, weight]
 
     if bias is not None:
         bias_shape = bias.shape()
-        bias_strides = bias.strides()
         bias_dtype = bias.dtype()
-        bias_device_type = bias.device_type()
-        bias_device_id = bias.device_id()
 
         if len(bias_shape) != 1:
             raise ValueError("Triton Linear bias must be one-dimensional")
@@ -945,73 +726,38 @@ def linear(out, x, weight, bias=None):
         if bias_dtype != out_dtype:
             raise ValueError("Triton Linear bias must use the same dtype as output")
 
-        if bias_device_type != DeviceType.NVIDIA:
-            raise ValueError("NVIDIA Triton Linear bias must be an NVIDIA tensor")
+        tensors.append(bias)
 
-        if bias_device_id != out_device_id:
-            raise ValueError("Triton Linear bias must be on the same device as output")
+    backend, runtime, _, device_id = _resolve_backend(*tensors)
 
-        if not _is_contiguous(bias_shape, bias_strides):
-            raise ValueError("Triton Linear bias must be contiguous")
+    _require_contiguous(out, "Linear output")
+    _require_contiguous(x, "Linear input")
+    _require_contiguous(weight, "Linear weight")
 
-    # ============================================================
-    # Empty output
-    # ============================================================
+    if bias is not None:
+        _require_contiguous(bias, "Linear bias")
 
     if m == 0 or n == 0:
         return out
 
-    # ============================================================
-    # Configuration
-    # ============================================================
+    config = backend.linear_config(m, n, k)
 
-    config = _nvidia_backend.linear_config(m, n, k)
-
-    # ============================================================
-    # Tensor bridge
-    # ============================================================
-
-    out_triton = as_nvidia_triton_tensor(out)
-
-    # ============================================================
-    # Bias
-    #
-    # Triton still needs a pointer argument even when HAS_BIAS
-    # is False. Use output as a harmless dummy pointer.
-    # ============================================================
+    out_triton = as_triton_tensor(out, backend)
 
     has_bias = bias is not None
 
     if has_bias:
-        bias_triton = as_nvidia_triton_tensor(bias)
-
+        bias_triton = as_triton_tensor(bias, backend)
         stride_bias = bias.strides()[0]
-
     else:
+        # Triton still requires a pointer argument even when HAS_BIAS
+        # is False. The output pointer is a harmless dummy pointer.
         bias_triton = out_triton
-
         stride_bias = 0
-
-    # ============================================================
-    # Runtime stream
-    # ============================================================
-
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
-
-    # ============================================================
-    # K == 0
-    #
-    # Native semantics:
-    #
-    #     no bias:
-    #         output = 0
-    #
-    #     bias:
-    #         output = broadcast(bias)
-    # ============================================================
 
     if k == 0:
         block_size = config["ZERO_K_BLOCK_SIZE"]
+        num_warps = config.get("ZERO_K_NUM_WARPS", 4)
 
         grid = (triton.cdiv(m * n, block_size),)
 
@@ -1026,32 +772,19 @@ def linear(out, x, weight, bias=None):
                 stride_bias,
                 HAS_BIAS=has_bias,
                 BLOCK_SIZE=block_size,
-                num_warps=4,
+                num_warps=num_warps,
             )
 
-        if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-            launch_zero_k()
-
-        else:
-            with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-                launch_zero_k()
+        _launch(backend, runtime, device_id, launch_zero_k)
 
         return out
 
-    # ============================================================
-    # Normal GEMM path
-    # ============================================================
-
-    x_triton = as_nvidia_triton_tensor(x)
-
-    weight_triton = as_nvidia_triton_tensor(weight)
+    x_triton = as_triton_tensor(x, backend)
+    weight_triton = as_triton_tensor(weight, backend)
 
     block_m = config["BLOCK_M"]
-
     block_n = config["BLOCK_N"]
-
     block_k = config["BLOCK_K"]
-
     group_m = config["GROUP_M"]
 
     grid = (triton.cdiv(m, block_m) * triton.cdiv(n, block_n),)
@@ -1081,18 +814,14 @@ def linear(out, x, weight, bias=None):
             num_stages=config["num_stages"],
         )
 
-    # ============================================================
-    # Same LLAISYS CUDA stream
-    # ============================================================
-
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return out
+
+
+# ============================================================
+# Self-Attention
+# ============================================================
 
 
 def self_attention(attn_val, q, k, v, scale):
@@ -1110,16 +839,6 @@ def self_attention(attn_val, q, k, v, scale):
     q_dtype = q.dtype()
     k_dtype = k.dtype()
     v_dtype = v.dtype()
-
-    out_device_type = attn_val.device_type()
-    q_device_type = q.device_type()
-    k_device_type = k.device_type()
-    v_device_type = v.device_type()
-
-    out_device_id = attn_val.device_id()
-    q_device_id = q.device_id()
-    k_device_id = k.device_id()
-    v_device_id = v.device_id()
 
     if len(out_shape) != 3:
         raise ValueError("Triton Self-Attention output must be three-dimensional")
@@ -1184,35 +903,19 @@ def self_attention(attn_val, q, k, v, scale):
     if not (out_dtype == q_dtype == k_dtype == v_dtype):
         raise ValueError("Triton Self-Attention output, query, key, and value must use the same dtype")
 
-    if not (
-        out_device_type == DeviceType.NVIDIA
-        and q_device_type == DeviceType.NVIDIA
-        and k_device_type == DeviceType.NVIDIA
-        and v_device_type == DeviceType.NVIDIA
-    ):
-        raise ValueError("NVIDIA Triton Self-Attention requires NVIDIA tensors")
+    backend, runtime, _, device_id = _resolve_backend(attn_val, q, k, v)
 
-    if not (out_device_id == q_device_id == k_device_id == v_device_id):
-        raise ValueError("Triton Self-Attention tensors must be on the same device")
-
-    if not _is_contiguous(out_shape, out_strides):
-        raise ValueError("Triton Self-Attention output must be contiguous")
-
-    if not _is_contiguous(q_shape, q_strides):
-        raise ValueError("Triton Self-Attention query must be contiguous")
-
-    if not _is_contiguous(k_shape, k_strides):
-        raise ValueError("Triton Self-Attention key must be contiguous")
-
-    if not _is_contiguous(v_shape, v_strides):
-        raise ValueError("Triton Self-Attention value must be contiguous")
+    _require_contiguous(attn_val, "Self-Attention output")
+    _require_contiguous(q, "Self-Attention query")
+    _require_contiguous(k, "Self-Attention key")
+    _require_contiguous(v, "Self-Attention value")
 
     if seqlen == 0:
         return attn_val
 
     group_size = nhead // nkvhead
 
-    config = _nvidia_backend.self_attention_config(qk_dim, value_dim, total_len)
+    config = backend.self_attention_config(qk_dim, value_dim, total_len)
 
     block_m = config["BLOCK_M"]
     block_n = config["BLOCK_N"]
@@ -1221,12 +924,10 @@ def self_attention(attn_val, q, k, v, scale):
 
     grid = (triton.cdiv(seqlen, block_m), nhead, triton.cdiv(value_dim, block_v))
 
-    out_triton = as_nvidia_triton_tensor(attn_val)
-    q_triton = as_nvidia_triton_tensor(q)
-    k_triton = as_nvidia_triton_tensor(k)
-    v_triton = as_nvidia_triton_tensor(v)
-
-    stream_ptr = _nvidia_runtime.get_context_stream(out_device_id)
+    out_triton = as_triton_tensor(attn_val, backend)
+    q_triton = as_triton_tensor(q, backend)
+    k_triton = as_triton_tensor(k, backend)
+    v_triton = as_triton_tensor(v, backend)
 
     def launch():
         self_attention_kernel[grid](
@@ -1260,10 +961,6 @@ def self_attention(attn_val, q, k, v, scale):
             num_stages=config["num_stages"],
         )
 
-    if _nvidia_backend.in_execution_context(stream_ptr, out_device_id):
-        launch()
-    else:
-        with _nvidia_backend.stream_context(stream_ptr, out_device_id):
-            launch()
+    _launch(backend, runtime, device_id, launch)
 
     return attn_val

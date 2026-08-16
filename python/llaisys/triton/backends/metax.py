@@ -1,6 +1,7 @@
-from .base import TritonBackend
+from .torch_cuda import TorchCudaLikeTritonBackend
+from ...libllaisys import DeviceType
 
 
-class MetaXTritonBackend(TritonBackend):
-    def add_config(self, numel: int) -> dict:
-        raise NotImplementedError("MetaX Triton backend is not implemented yet.")
+class MetaXTritonBackend(TorchCudaLikeTritonBackend):
+    name = "metax"
+    device_type = DeviceType.METAX

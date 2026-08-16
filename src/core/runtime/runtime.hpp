@@ -2,7 +2,6 @@
 
 #include "llaisys.h"
 
-#include "../../device/device_resource.hpp"
 #include "../../device/runtime_api.hpp"
 #include "../allocator/allocator.hpp"
 #include "../core.hpp"
@@ -25,12 +24,6 @@ private:
 
     llaisysStream_t _stream;
 
-    // Opaque backend-specific reusable resources.
-    //
-    // A backend may return nullptr when it has no extra
-    // Runtime-owned resources.
-    std::unique_ptr<llaisys::device::DeviceResource> _resource;
-
     void _activate();
     void _deactivate();
 
@@ -42,11 +35,9 @@ public:
     ~Runtime() noexcept;
 
     Runtime(const Runtime &) = delete;
-
     Runtime &operator=(const Runtime &) = delete;
 
     Runtime(Runtime &&) = delete;
-
     Runtime &operator=(Runtime &&) = delete;
 
     llaisysDeviceType_t deviceType() const;
@@ -64,10 +55,6 @@ public:
     void freeStorage(Storage *storage);
 
     llaisysStream_t stream() const;
-
-    llaisys::device::DeviceResource *resource();
-
-    const llaisys::device::DeviceResource *resource() const;
 
     void synchronize() const;
 };

@@ -10,11 +10,14 @@ find . \
 
 ruff format .
 
-Tensor → Add → Rearrange → Embedding → Argmax → RMSNorm → RoPE → Linear → Self-Attention
-1. Linear
-2. Self-Attention
-3. RMSNorm
-4. RoPE
+Add             ✓ template finished
+SwiGLU          ← next
+Embedding
+RMSNorm
+RoPE
+Argmax
+Linear
+Self-Attention
 --------------------------------------------------
 cd ~/Desktop/InfiniTensor/llaisys-26s
 xmake clean -a
@@ -128,3 +131,187 @@ python test/test_infer.py \
 	--prompt "Who are you?" \
 	--max_steps 10
 
+=====================NV and Triton=====================
+
+LLAISYS_BLOCK_SIZE=256 \
+python test/ops/add.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/add
+
+LLAISYS_TRITON_BLOCK_SIZE=256 \
+LLAISYS_TRITON_NUM_WARPS=4 \
+python test/ops/add.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/add
+
+----------------------------------------
+
+
+LLAISYS_TRITON_BLOCK_SIZE=256 \
+LLAISYS_TRITON_NUM_WARPS=4 \
+python test/ops/swiglu.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/swiglu
+
+LLAISYS_BLOCK_SIZE=256 \
+python test/ops/swiglu.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/swiglu
+
+    --------------------------------------
+
+LLAISYS_TRITON_BLOCK_SIZE=128 \
+LLAISYS_TRITON_NUM_WARPS=4 \
+python test/ops/embedding.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/embedding
+
+LLAISYS_TRITON_BLOCK_SIZE=128 \
+LLAISYS_TRITON_NUM_WARPS=4 \
+python test/ops/embedding.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/embedding
+
+    -------------------------------------------
+
+    LLAISYS_BLOCK_SIZE=256 \
+python test/ops/rms_norm.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/rms_norm
+
+RMSNorm 这里我建议baseline 先不要手动固定 BLOCK_SIZE=256。
+因为当前 RMSNorm baseline 本身就是根据 ncol 动态解析
+
+    python test/ops/rms_norm.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/rms_norm
+
+    -------------------------------
+
+    python test/ops/argmax.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/argmax
+
+    python test/ops/argmax.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/argmax
+
+    -----------------------------
+
+    python test/ops/linear.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/linear
+
+
+
+    python test/ops/linear.py \
+    --device nvidia \
+    --backend native \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/linear
+
+----------------
+
+python test/ops/self_attention.py \
+    --device nvidia \
+    --backend triton \
+    --backend-variant baseline \
+    --benchmark-order alternating \
+    --profile \
+    --profile-suite all \
+    --show-config \
+    --show-bandwidth \
+    --show-throughput \
+    --output-dir result/self_attention
